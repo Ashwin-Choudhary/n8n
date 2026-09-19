@@ -1,0 +1,1701 @@
+{
+  "name": "HVAC Lead Response System V2 - Reusable",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "a4616149-50c0-448f-a673-a2e85dbc9346",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1792,
+        448
+      ],
+      "id": "0371dab1-8ec4-41ff-993f-a1f2d4900bbb",
+      "name": "Webhook",
+      "webhookId": "a4616149-50c0-448f-a673-a2e85dbc9346"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const email = String($json.email || '')\n  .trim()\n  .toLowerCase();\n\nreturn {\n  json: {\n    ...$json,\n    normalizedEmail: email,\n    submitted_at: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -672,
+        448
+      ],
+      "id": "0249658f-1103-419b-b11f-90c418c0819c",
+      "name": "Prepare Lead Data"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0",
+          "mode": "list",
+          "cachedResultName": "n8n practice spreadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1945007779,
+          "mode": "list",
+          "cachedResultName": "final lead management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit#gid=1945007779"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -448,
+        448
+      ],
+      "id": "b19220d5-620f-4dd5-9d25-71ae8686d23d",
+      "name": "Check Existing Lead",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "pM0nnHa3DIm6R9f0",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const original = $('Prepare Lead Data').first().json;\n\nconst incomingEmail = String(original.normalizedEmail || '')\n  .trim()\n  .toLowerCase();\n\nconst incomingTime = new Date(original.submitted_at).getTime();\n\nconst twelveHours = 12 * 60 * 60 * 1000;\n\nconst rows = $input.all();\n\nconst duplicate = rows.some(item => {\n  const sheetEmail = String(item.json.email || '')\n    .trim()\n    .toLowerCase();\n\n  // Different email = not a duplicate\n  if (sheetEmail !== incomingEmail) {\n    return false;\n  }\n\n  const submittedAt = item.json.submitted_at;\n\n  // No timestamp = ignore this old row\n  if (!submittedAt) {\n    return false;\n  }\n\n  const rowTime = new Date(submittedAt).getTime();\n\n  // Invalid timestamp = ignore\n  if (Number.isNaN(rowTime) || Number.isNaN(incomingTime)) {\n    return false;\n  }\n\n  // Compare this request with the existing request\n  const timeDifference = Math.abs(incomingTime - rowTime);\n\n  return timeDifference <= twelveHours;\n});\n\nreturn [\n  {\n    json: {\n      ...original,\n      duplicate\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        448
+      ],
+      "id": "562929d7-e38a-476d-8247-356d60ceee77",
+      "name": "Normalise Lead data"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "68a6058f-829a-4705-8b95-2eeac3e82a46",
+              "leftValue": "={{ $json.duplicate }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -48,
+        448
+      ],
+      "id": "6e6229db-2062-4999-ad70-2e87a0cbf953",
+      "name": "Lead Exists?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $json.body;\nconst message = (lead.message || \"\").toLowerCase();\nconst budget = Number(lead.budget || 0);\n\n// Explicit cold signals ALWAYS override everything else\nconst coldSignals = [\n  \"just looking\",\n  \"just looking around\",\n  \"just looking around for now\",\n  \"just exploring\",\n  \"only exploring\",\n  \"browsing\",\n  \"just checking\",\n  \"just curious\",\n  \"not ready\",\n  \"not looking to buy\"\n];\n\nif (coldSignals.some(signal => message.includes(signal))) {\n  return {\n    json: {\n      ...$json,\n      forced_classification: true,\n      lead_type: \"cold\",\n      reason: \"Only browsing with no clear buying intent\",\n      priority: \"low\",\n      service: \"AI consulting\"\n    }\n  };\n}\n\n// Strong hot signals\nconst hotSignals = [\n  \"start immediately\",\n  \"ready to start\",\n  \"ready to move forward\",\n  \"approved budget\",\n  \"budget has been approved\",\n  \"allocated budget\",\n  \"need this implemented\",\n  \"need it implemented\",\n  \"this month\"\n];\n\nconst hasHotSignal = hotSignals.some(signal => message.includes(signal));\n\nif (hasHotSignal && budget > 0) {\n  return {\n    json: {\n      ...$json,\n      forced_classification: true,\n      lead_type: \"hot\",\n      reason: \"Specific need, budget, and strong readiness to proceed\",\n      priority: \"high\",\n      service: \"AI implementation\"\n    }\n  };\n}\n\n// Otherwise let the AI classify ambiguous leads\nreturn {\n  json: {\n    ...$json,\n    forced_classification: false\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        448
+      ],
+      "id": "bcabdd4e-cc90-45f6-bdf4-10030b0aa972",
+      "name": "Build AI Classification Prompt"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const result = $json.output?.[0]?.content?.[0]?.text;\n\nif (!result || typeof result !== \"object\") {\n  throw new Error(\"AI returned no valid classification object\");\n}\n\nconst validLeadTypes = [\"hot\", \"warm\", \"cold\"];\n\nif (!validLeadTypes.includes(result.lead_type)) {\n  throw new Error(\n    `Invalid lead_type returned by AI: \"${result.lead_type}\". Expected hot, warm, or cold.`\n  );\n}\n\nif (!result.service) {\n  throw new Error(\"AI classification is missing service\");\n}\n\n// Priority is derived from lead_type.\n// We do not need the AI to decide this separately.\nconst priorityMap = {\n  hot: \"high\",\n  warm: \"normal\",\n  cold: \"low\"\n};\n\nreturn {\n  json: {\n    ...$json,\n    lead_type: result.lead_type,\n    service: result.service,\n    urgency: result.urgency || \"unknown\",\n    reason: result.summary || \"No summary provided\",\n    priority: priorityMap[result.lead_type]\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        768,
+        448
+      ],
+      "id": "82b34a19-356a-4ab4-8e7c-4b22ae13aaaf",
+      "name": "Parse AI Classificatioin"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "4040913d-d861-4fb8-9a1c-c0478cb3d6aa",
+              "leftValue": "={{ $json.lead_type }}",
+              "rightValue": "hot",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        976,
+        448
+      ],
+      "id": "2fcbb124-94a7-46c5-b85c-5d1315a08575",
+      "name": "Lead Temperature"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ee83c432-383e-465d-a61f-c694a49d705d",
+              "name": "priority",
+              "value": "={{ $json.priority }}",
+              "type": "string"
+            },
+            {
+              "id": "cd12416b-1d80-4bab-9a66-487cbdba8746",
+              "name": "submitted_at",
+              "value": "={{ $('Prepare Lead Data').item.json.submitted_at }}",
+              "type": "string"
+            },
+            {
+              "id": "cf9a56e0-03ad-4de9-8da4-d7862d7253b4",
+              "name": "name",
+              "value": "={{ $('Prepare Lead Data').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "1d21e473-a917-46a8-8435-1ee0589289f9",
+              "name": "email",
+              "value": "={{ $('Prepare Lead Data').item.json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "346b81f5-25aa-452e-9547-7308698601f4",
+              "name": "company",
+              "value": "={{ $('Prepare Lead Data').item.json.company }}",
+              "type": "string"
+            },
+            {
+              "id": "4331ae8b-3d8f-417f-904f-93a4453f6bb7",
+              "name": "message",
+              "value": "={{ $('Prepare Lead Data').item.json.message }}",
+              "type": "string"
+            },
+            {
+              "id": "eb8769a4-424b-4242-a337-097bbb39fc8c",
+              "name": "budget",
+              "value": "={{ $('Prepare Lead Data').item.json.budget }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "include": "=all",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1344,
+        560
+      ],
+      "id": "7f381e0f-c67b-4028-b2a5-41b341860548",
+      "name": "Prepare Warm/Cold Lead"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "68b7b022-d821-428b-aba3-55941e74ca83",
+              "name": "priority",
+              "value": "high",
+              "type": "string"
+            },
+            {
+              "id": "a6c812d2-1253-49f9-87e9-a339e564a8bb",
+              "name": "submitted_at",
+              "value": "={{ $('Prepare Lead Data').item.json.submitted_at }}",
+              "type": "string"
+            },
+            {
+              "id": "2dbdf691-9ef2-49bb-b497-d6f5279520e8",
+              "name": "name",
+              "value": "={{ $('Prepare Lead Data').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "b6257719-dc47-48ce-ba8c-b389d7be9c89",
+              "name": "email",
+              "value": "={{ $('Prepare Lead Data').item.json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "34f53e84-bf0f-4e42-8a8c-2b839aa6013e",
+              "name": "company",
+              "value": "={{ $('Prepare Lead Data').item.json.company }}",
+              "type": "string"
+            },
+            {
+              "id": "902d03ad-bfd9-474f-b8cc-67d2249c259b",
+              "name": "message",
+              "value": "={{ $('Prepare Lead Data').item.json.message }}",
+              "type": "string"
+            },
+            {
+              "id": "f85f750f-0e14-4819-9f5c-d0aded998130",
+              "name": "budget",
+              "value": "={{ $('Prepare Lead Data').item.json.budget }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1344,
+        352
+      ],
+      "id": "69965917-59d6-4958-bff5-d340f60b4498",
+      "name": "Prepare Hot Lead"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1616,
+        448
+      ],
+      "id": "6fe9c17e-b5cf-4f37-86e4-ea4e2e7ae4e6",
+      "name": "Merge Lead Data"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "06a6fd09-1e9e-4bbd-85aa-5668e7bd0eff",
+              "name": "status",
+              "value": "ai_failed",
+              "type": "string"
+            },
+            {
+              "id": "9b065fbd-c515-455c-89d6-26e750ed19d5",
+              "name": "error",
+              "value": "AI classification failed",
+              "type": "string"
+            },
+            {
+              "id": "0a55dfbc-d496-4ebd-988e-a09c0e8ee0a9",
+              "name": "timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        448,
+        656
+      ],
+      "id": "4c23afac-bea7-4d26-8083-dbacdc9c97f6",
+      "name": "AI Error Handler"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b11ccea5-a28e-4dfb-997a-e527de2422f0",
+              "name": "status",
+              "value": "rejected",
+              "type": "string"
+            },
+            {
+              "id": "aad84c14-6f73-487e-a436-3bd3d59c72d3",
+              "name": "reason",
+              "value": "duplicate leads detected",
+              "type": "string"
+            },
+            {
+              "id": "9572f657-445b-4554-94b4-f1b4df53abbf",
+              "name": "message",
+              "value": "This email has already submitted a request within the last 12 hours. Please try again after the 12-hour window has passed.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -32,
+        672
+      ],
+      "id": "3abdd832-5e8f-4cd3-a52f-6e18a698a0e6",
+      "name": "Duplicate Lead Handler"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0",
+          "mode": "list",
+          "cachedResultName": "n8n practice spreadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1945007779,
+          "mode": "list",
+          "cachedResultName": "final lead management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit#gid=1945007779"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $json.name }}",
+            "email": "={{ $json.email }}",
+            "company": "={{ $json.company }}",
+            "message": "={{ $json.message }}",
+            "budget": "={{ $json.budget }}",
+            "lead_type": "ai_failed",
+            "reason": "AI classification failed",
+            "priority": "normal",
+            "service": "Unknown",
+            "submitted_at": "={{ $('Prepare Lead Data').item.json.submitted_at }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "budget",
+              "displayName": "budget",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lead_type",
+              "displayName": "lead_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "service",
+              "displayName": "service",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "submitted_at",
+              "displayName": "submitted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        672,
+        656
+      ],
+      "id": "4d332a14-d8c7-46b8-a8e6-5cf2191dfc18",
+      "name": "Log New Lead",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "pM0nnHa3DIm6R9f0",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = `Hi ${$json.name},\n\nThanks for reaching out about ${$json.service}. We’ve received your inquiry and will get back to you shortly.\n\nBest regards,\n${$('Client Config').item.json.business_name}`;\n\nreturn {\n  json: {\n    ...$json,\n    response: response\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        448
+      ],
+      "id": "fa85210c-88c6-4549-8ece-77ebe008d747",
+      "name": "Build Email Data"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Re: Your inquiry about {{ $json.company }}",
+        "emailType": "text",
+        "message": "={{ $json.response }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2032,
+        448
+      ],
+      "id": "897e8962-c852-4178-a623-93e0db30c502",
+      "name": "Send Lead Response",
+      "webhookId": "f5fbb130-c497-44c3-b76d-47948b3ce538",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CDXl2sH20cP5CW5f",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2065ed4c-a101-451a-9680-3b06bf9cf390",
+              "leftValue": "={{ $('Merge Lead Data').item.json.priority }}",
+              "rightValue": "high",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2256,
+        448
+      ],
+      "id": "7de1b2d5-6191-4ad9-9dc4-9d7baaadcbb4",
+      "name": "Route Lead by Temperature"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0",
+          "mode": "list",
+          "cachedResultName": "n8n practice spreadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1945007779,
+          "mode": "list",
+          "cachedResultName": "final lead management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit#gid=1945007779"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $('Normalize Webhook Data').item.json.body.name }}",
+            "email": "={{ $('Normalize Webhook Data').item.json.body.email }}",
+            "company": "={{ $('Normalize Webhook Data').item.json.body.company }}",
+            "message": "={{ $('Normalize Webhook Data').item.json.body.message }}",
+            "budget": "={{ $('Normalize Webhook Data').item.json.body.budget }}",
+            "lead_type": "={{ $('Merge Lead Data').item.json.lead_type }}",
+            "service": "={{ $('Merge Lead Data').item.json.service }}",
+            "reason": "={{ $('Merge Lead Data').item.json.reason }}",
+            "priority": "={{ $('Merge Lead Data').item.json.priority }}",
+            "submitted_at": "={{ $('Prepare Lead Data').item.json.submitted_at }}",
+            "response": "={{ $('Build Email Data').item.json.response }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "budget",
+              "displayName": "budget",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_type",
+              "displayName": "lead_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "service",
+              "displayName": "service",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "submitted_at",
+              "displayName": "submitted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "response",
+              "displayName": "response",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2592,
+        448
+      ],
+      "id": "f45934f9-320d-4d9c-837c-e36a82fe4dd5",
+      "name": "Log Hot Lead",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "pM0nnHa3DIm6R9f0",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cd6e3715-7388-478e-b425-50fce23fcf7a",
+              "name": "status",
+              "value": "sheets_failed",
+              "type": "string"
+            },
+            {
+              "id": "6788a263-3413-4666-866e-d6eed34525c4",
+              "name": "error",
+              "value": "Google sheets failed to save the lead",
+              "type": "string"
+            },
+            {
+              "id": "2a3089e3-5d0a-4b48-83ce-73d43568fb9e",
+              "name": "timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2832,
+        448
+      ],
+      "id": "aff7071b-626a-49cf-9f14-cca4b1b8057a",
+      "name": "Prepare Hot Lead Log"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0",
+          "mode": "list",
+          "cachedResultName": "n8n practice spreadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1945007779,
+          "mode": "list",
+          "cachedResultName": "final lead management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit#gid=1945007779"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $('Normalize Webhook Data').item.json.name }}",
+            "email": "={{ $('Normalize Webhook Data').item.json.email }}",
+            "company": "={{ $('Normalize Webhook Data').item.json.company }}",
+            "message": "={{ $('Normalize Webhook Data').item.json.message }}",
+            "budget": "={{ $('Normalize Webhook Data').item.json.budget }}",
+            "lead_type": "={{ $('Parse AI Classificatioin').item.json.lead_type }}",
+            "reason": "={{ $('Parse AI Classificatioin').item.json.reason }}",
+            "service": "={{ $('Parse AI Classificatioin').item.json.service }}",
+            "submitted_at": "={{ $('Prepare Lead Data').item.json.submitted_at }}",
+            "priority": "={{ $('Parse AI Classificatioin').item.json.priority }}",
+            "response": "={{ $('Build Email Data').item.json.response }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "budget",
+              "displayName": "budget",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_type",
+              "displayName": "lead_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "service",
+              "displayName": "service",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "submitted_at",
+              "displayName": "submitted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "response",
+              "displayName": "response",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2592,
+        624
+      ],
+      "id": "39ca4dba-8e42-4f71-ba74-4239cd65ee50",
+      "name": "Log Warm-Cold Lead",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "pM0nnHa3DIm6R9f0",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1b6b1f6a-504a-4a0d-9f66-6d3e222e259f",
+              "name": "status",
+              "value": "sheets_failed",
+              "type": "string"
+            },
+            {
+              "id": "520c315e-d71a-4ab8-914a-70acbee4c53e",
+              "name": "error",
+              "value": "Google sheets failed to save the lead",
+              "type": "string"
+            },
+            {
+              "id": "bae6b273-b836-424a-851e-90ed65e14c29",
+              "name": "timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2832,
+        624
+      ],
+      "id": "ccbcd56e-5fe0-4cd4-b0dc-890ac59a4065",
+      "name": "Prepare Warm-Cold Lead Log"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f076ac35-1b10-46c0-a905-3710ba75a027",
+              "name": "status",
+              "value": "email_failed",
+              "type": "string"
+            },
+            {
+              "id": "28d3bc9d-9267-4281-9a3b-5e7712c1bf25",
+              "name": "error",
+              "value": "Gmail failed to send the email",
+              "type": "string"
+            },
+            {
+              "id": "ac144c91-a182-4744-9ded-19838d2303b2",
+              "name": "timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2032,
+        624
+      ],
+      "id": "2275bc47-187d-4c8c-b904-20596217e13d",
+      "name": "Prepare Error Email"
+    },
+    {
+      "parameters": {
+        "sendTo": "ashwinchoudhary2007@gmail.com",
+        "subject": "⚠️ Lead Automation Error",
+        "message": "=A lead automation error occurred.\n\nName: {{ $json.name }}\nEmail: {{ $json.email }}\nCompany: {{ $json.company }}\n\nStatus: {{ $json.status }}\nError: {{ $json.error }}\nTime: {{ $json.timestamp }}\n\nManual review required.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2592,
+        864
+      ],
+      "id": "6d50348d-6d1e-478b-9bd9-ed0827a13add",
+      "name": "Send Error Notification",
+      "webhookId": "e802221b-2948-4337-845d-6e5d17f165c3",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CDXl2sH20cP5CW5f",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "ashwinchoudhary2007@gmail.com",
+        "subject": "=🚨 High-Priority Lead: {{ $('Normalize Webhook Data').item.json.body.name }}",
+        "message": "=A high-priority lead has been received.  \nName: {{ $('Normalize Webhook Data').item.json.body.name }}\n\nEmail: {{ $('Normalize Webhook Data').item.json.body.email }} \n\nCompany: {{ $('Normalize Webhook Data').item.json.body.company }} \n\nMessage: {{ $('Normalize Webhook Data').item.json.body.message }} \n\nBudget: {{ $('Normalize Webhook Data').item.json.body.budget }}  \n\nLead Type: {{ $('Merge Lead Data').item.json.lead_type }} \n\nReason: {{ $('Merge Lead Data').item.json.reason }} \n\nService: {{ $('Merge Lead Data').item.json.service }} \n\nPriority: {{ $('Merge Lead Data').item.json.priority }}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2592,
+        1056
+      ],
+      "id": "b061a36d-fbdf-4354-958b-8dc626f8264a",
+      "name": "Send Lead Notification",
+      "webhookId": "10ba07b1-6d2c-4ba1-86bd-87d55f7e08d2",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CDXl2sH20cP5CW5f",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8d9949e8-5ff0-41c9-b114-94411be55b22",
+              "name": "status",
+              "value": "sheets_failed",
+              "type": "string"
+            },
+            {
+              "id": "5b55c623-5a58-4f23-871b-989936e0705f",
+              "name": "error",
+              "value": "Google sheets failed to save the lead",
+              "type": "string"
+            },
+            {
+              "id": "45b56416-5262-4597-95f0-55a97bda3483",
+              "name": "timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        928,
+        656
+      ],
+      "id": "3a3e4c91-7e5d-43ca-a9d2-41da7687667b",
+      "name": "Prepare AI Error Log"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "42c7ed41-714d-4f17-a88f-faefff460ca8",
+              "name": "name",
+              "value": "={{$json.body.name}}",
+              "type": "string"
+            },
+            {
+              "id": "4c16fd3a-5025-4dbc-8d66-d86426e7d271",
+              "name": "email",
+              "value": "={{$json.body.email}}",
+              "type": "string"
+            },
+            {
+              "id": "764e64da-11e5-454e-b0bc-47b0175a1c83",
+              "name": "company",
+              "value": "={{$json.body.company}}",
+              "type": "string"
+            },
+            {
+              "id": "1a3eaa14-d155-4010-b61c-b4b35504a549",
+              "name": "message",
+              "value": "={{$json.body.message}}",
+              "type": "string"
+            },
+            {
+              "id": "54962a9e-ad27-4851-96f5-6b1cdaaeaf0c",
+              "name": "budget",
+              "value": "={{$json.body.budget}}",
+              "type": "number"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -1584,
+        448
+      ],
+      "id": "b452dc6c-e593-43a2-9e57-1a3be9848265",
+      "name": "Normalize Webhook Data"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const requiredFields = [\n  \"name\",\n  \"email\",\n  \"company\",\n  \"message\",\n  \"budget\"\n];\n\nconst missingFields = requiredFields.filter(field => {\n  const value = $json[field];\n  return value === undefined || value === null || String(value).trim() === \"\";\n});\n\nreturn {\n  json: {\n    ...$json,\n    valid: missingFields.length === 0,\n    missingFields\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1136,
+        448
+      ],
+      "id": "4415f652-0ff5-4097-9b9a-0de1f9774df9",
+      "name": "Validate Lead Data"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "71b75b82-fb59-49a5-9add-08c94a6c1159",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -912,
+        448
+      ],
+      "id": "b138828a-f605-4d19-9d4f-b7f171318ec0",
+      "name": "Check Required Fields"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5b6696ce-c463-468a-b6b2-a29b404ebd9a",
+              "name": "status",
+              "value": "rejected",
+              "type": "string"
+            },
+            {
+              "id": "cd924aba-f669-480d-92dc-e2bf50c1cf7b",
+              "name": "missingfields",
+              "value": "={{ $json.missingFields.join(\", \") }}",
+              "type": "string"
+            },
+            {
+              "id": "3be984d0-73e8-4c7b-aa19-5e6463b77acd",
+              "name": "message",
+              "value": "please provide all required fields",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -912,
+        672
+      ],
+      "id": "1845d345-7e27-4def-a10e-dd4c00f71693",
+      "name": "Handle Missing Fields"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-5-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "=You are an HVAC lead qualification and service identification system.\n\nAnalyze ONLY the single customer lead provided below.\n\nYour job has FOUR tasks:\n\n1. Identify the specific HVAC service the customer appears to need.\n2. Determine how urgent the customer's situation is.\n3. Classify the lead as exactly ONE of:\n   - hot\n   - warm\n   - cold\n4. Write a short factual summary of the customer's situation.\n\nLEAD DATA:\n\nName: {{ $json.name }}\nEmail: {{ $json.email }}\nCompany: {{ $json.company }}\nMessage: {{ $json.message }}\nBudget: {{ $json.budget }}\n\n\nSERVICE IDENTIFICATION\n\nDetermine the most specific HVAC service that matches the customer's actual problem.\n\nExamples include:\n\n- AC repair\n- AC installation\n- AC replacement\n- AC maintenance\n- AC inspection\n- Furnace repair\n- Furnace installation\n- Furnace replacement\n- Furnace maintenance\n- Heating repair\n- Heating installation\n- Heat pump repair\n- Heat pump installation\n- Ductwork repair\n- Ductwork installation\n- Indoor air quality service\n- Commercial HVAC service\n- Emergency HVAC repair\n\nYou may use another specific HVAC service if the customer's message clearly describes one.\n\nDo NOT invent a service that is not supported by the customer's message.\n\nIf the customer does not provide enough information to identify a specific service, use:\n\n\"general HVAC consultation\"\n\n\nURGENCY CLASSIFICATION\n\nClassify urgency as exactly ONE of:\n\n\"urgent\"\n\"soon\"\n\"non_urgent\"\n\nUse these rules:\n\nURGENT:\n- The HVAC system has completely failed.\n- There is no heating or cooling when it is needed.\n- The customer describes an emergency situation.\n- The customer explicitly needs service immediately, today, or as soon as possible.\n- The problem could reasonably require immediate attention.\n\nSOON:\n- The customer has a real HVAC problem but does not require immediate service.\n- The customer wants the issue addressed within the next few days or weeks.\n- The customer is actively looking for repair, replacement, installation, or maintenance.\n\nNON_URGENT:\n- The customer is only asking general questions.\n- The customer is researching future options.\n- The customer is asking about maintenance or replacement without an immediate problem.\n- The customer does not currently need service.\n\n\nLEAD TEMPERATURE\n\nClassify the lead as exactly ONE of:\n\n\"hot\"\n\"warm\"\n\"cold\"\n\n\nSTEP 1 — COLD CHECK\n\nClassify as COLD if ANY of these are true:\n\n- The customer is only casually browsing.\n- The customer says they are just looking, just browsing, or similar.\n- The customer says they are not planning to hire anyone.\n- The customer has no identifiable HVAC problem, service need, or desired outcome.\n- The customer shows little or no interest in actually obtaining HVAC service.\n- The customer is only asking general informational questions with no indication that they currently need service.\n\nIf the lead clearly matches a COLD condition, classify it as COLD and stop.\n\n\nSTEP 2 — HOT CHECK\n\nClassify as HOT when ALL THREE conditions are satisfied:\n\nA. SPECIFIC SERVICE NEED\n\nThe customer clearly describes an HVAC problem or a specific service they want.\n\nExamples:\n\n- AC stopped cooling.\n- Furnace stopped working.\n- Need a new AC installed.\n- Want to replace an old HVAC system.\n- Need a technician to repair a heating system.\n- Need ductwork repaired.\n\nAND\n\nB. ACTIVE SERVICE INTENT\n\nThe customer clearly wants the problem addressed or wants to obtain the service.\n\nActive intent includes statements such as:\n\n- \"we need someone to fix this\"\n- \"we need a technician\"\n- \"we want to schedule service\"\n- \"we need someone to come out\"\n- \"we want to get this fixed\"\n- \"we need this repaired\"\n- \"we want to replace our AC\"\n- \"we want to install a new system\"\n- \"we would like to schedule an appointment\"\n- \"we need service today\"\n- \"we need someone this week\"\n\nAND\n\nC. SUFFICIENT URGENCY\n\nThe situation is urgent or the customer has a clear near-term need.\n\nA lead can be HOT even if they do not provide a budget.\n\nFor HVAC services, do NOT require a stated budget to classify a lead as HOT.\n\nIf A + B + C are satisfied, classify as HOT.\n\n\nSTEP 3 — WARM\n\nClassify as WARM when:\n\n- The customer has a genuine HVAC problem or service need,\n- But their intent to obtain service is weaker, uncertain, or exploratory.\n\nExamples:\n\n- They have an HVAC problem but are mainly asking what it might cost.\n- They are researching repair or replacement options.\n- They describe a problem but have not indicated that they want to schedule service.\n- They are considering replacing their system but have not decided to proceed.\n- They have a real need but are only comparing options.\n- They want service eventually but there is no clear near-term action.\n\nA lead does NOT need to provide a budget to be WARM.\n\n\nIMPORTANT RULES\n\n- Do not classify a lead as HOT merely because they mention a large budget.\n- Do not classify a lead as HOT merely because the problem sounds serious.\n- Do not classify a lead as COLD merely because no budget is provided.\n- For HVAC leads, the customer's problem, service intent, and timing are more important than budget.\n- Use ONLY information contained in the lead data.\n- Do not invent facts.\n- Do not assume a service that the customer did not indicate.\n- Keep the summary factual and concise.\n\n\nSUMMARY\n\nWrite a short summary describing:\n\n- What problem the customer has or what service they want.\n- Any important timing or urgency mentioned.\n- Any relevant information needed by the HVAC company.\n\nDo not include information that is not present in the lead.\n\n\nOUTPUT RULES\n\nReturn ONLY valid JSON.\n\nDo not return markdown.\nDo not return explanations outside the JSON.\nDo not use uppercase values.\nDo not add extra fields.\n\nThe lead_type value MUST be exactly one of:\n\n\"hot\"\n\"warm\"\n\"cold\"\n\nThe urgency value MUST be exactly one of:\n\n\"urgent\"\n\"soon\"\n\"non_urgent\"\n\nRequired JSON format:\n\n{\n  \"lead_type\": \"hot\",\n  \"service\": \"AC repair\",\n  \"urgency\": \"urgent\",\n  \"summary\": \"Customer's commercial AC has stopped cooling and they need a technician today.\"\n}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {
+          "textFormat": {
+            "textOptions": {
+              "type": "json_schema",
+              "name": "hvac_lead_analysis",
+              "schema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"lead_type\": {\n      \"type\": \"string\",\n      \"enum\": [\"hot\", \"warm\", \"cold\"]\n    },\n    \"service\": {\n      \"type\": \"string\"\n    },\n    \"urgency\": {\n      \"type\": \"string\",\n      \"enum\": [\"urgent\", \"soon\", \"non_urgent\"]\n    },\n    \"summary\": {\n      \"type\": \"string\"\n    }\n  },\n  \"required\": [\n    \"lead_type\",\n    \"service\",\n    \"urgency\",\n    \"summary\"\n  ],\n  \"additionalProperties\": false\n}",
+              "strict": true
+            }
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        368,
+        448
+      ],
+      "id": "e89cb561-8196-4ba2-afca-cf6d943dec32",
+      "name": "AI Classification",
+      "alwaysOutputData": true,
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "07171c0e-975d-40c9-9a7d-a4feec754e47",
+              "name": "business_name",
+              "value": "Demo HVAC Company",
+              "type": "string"
+            },
+            {
+              "id": "0c05c1fd-0a4e-4095-942a-2135000f2ea6",
+              "name": "business_type",
+              "value": "HVAC services",
+              "type": "string"
+            },
+            {
+              "id": "0716da92-98eb-42d6-a570-1d843631a991",
+              "name": "internal_email",
+              "value": "ashwinchoudhary2007@gmail.com",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -1360,
+        448
+      ],
+      "id": "9bc506a6-7324-4dd1-8ee3-66525114a31a",
+      "name": "Client Config"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize Webhook Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Check Existing Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Existing Lead": {
+      "main": [
+        [
+          {
+            "node": "Normalise Lead data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalise Lead data": {
+      "main": [
+        [
+          {
+            "node": "Lead Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Exists?": {
+      "main": [
+        [
+          {
+            "node": "Build AI Classification Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Duplicate Lead Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build AI Classification Prompt": {
+      "main": [
+        [
+          {
+            "node": "AI Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Classificatioin": {
+      "main": [
+        [
+          {
+            "node": "Lead Temperature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Temperature": {
+      "main": [
+        [
+          {
+            "node": "Prepare Hot Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Warm/Cold Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Warm/Cold Lead": {
+      "main": [
+        [
+          {
+            "node": "Merge Lead Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Prepare Hot Lead": {
+      "main": [
+        [
+          {
+            "node": "Merge Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Build Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Error Handler": {
+      "main": [
+        [
+          {
+            "node": "Log New Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log New Lead": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Prepare AI Error Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email Data": {
+      "main": [
+        [
+          {
+            "node": "Send Lead Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Lead Response": {
+      "main": [
+        [
+          {
+            "node": "Route Lead by Temperature",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Lead by Temperature": {
+      "main": [
+        [
+          {
+            "node": "Send Lead Notification",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Hot Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Warm-Cold Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Hot Lead": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Prepare Hot Lead Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Hot Lead Log": {
+      "main": [
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Warm-Cold Lead": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Prepare Warm-Cold Lead Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Warm-Cold Lead Log": {
+      "main": [
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Error Email": {
+      "main": [
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI Error Log": {
+      "main": [
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Webhook Data": {
+      "main": [
+        [
+          {
+            "node": "Client Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Check Required Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Required Fields": {
+      "main": [
+        [
+          {
+            "node": "Prepare Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Missing Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Classification": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Classificatioin",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Client Config": {
+      "main": [
+        [
+          {
+            "node": "Validate Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "dfdf9afa-0c23-41d3-acc8-4ce4831353cb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "844346bb3f1ffe5ef11581e9280e4d9f6efc85eac7b390fb8d0e0c659ecf77e5"
+  },
+  "nodeGroups": [],
+  "id": "OFz5ZvxK6kzP0Flb",
+  "tags": []
+}
