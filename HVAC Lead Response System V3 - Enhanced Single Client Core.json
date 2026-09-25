@@ -1,0 +1,2581 @@
+{
+  "name": "HVAC Lead Response System V3 - Multi Client Core",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "bf9ad91b-eea4-43de-a6fa-0272bb088630",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -976,
+        448
+      ],
+      "id": "1c27f492-738f-4091-91bf-d32fa9609197",
+      "name": "Webhook",
+      "webhookId": "bf9ad91b-eea4-43de-a6fa-0272bb088630"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const email = String($json.email || '')\n  .trim()\n  .toLowerCase();\n\nreturn {\n  json: {\n    ...$json,\n    normalizedEmail: email,\n    submitted_at: new Date().toISOString()\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        112,
+        448
+      ],
+      "id": "6b8e41dd-54ce-4dc7-9992-0cab36f5199d",
+      "name": "Prepare Lead Data"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0",
+          "mode": "list",
+          "cachedResultName": "n8n practice spreadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1945007779,
+          "mode": "list",
+          "cachedResultName": "final lead management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit#gid=1945007779"
+        },
+        "filtersUI": {
+          "values": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        528,
+        448
+      ],
+      "id": "3478cba0-03cd-48e7-ba47-94087326c107",
+      "name": "Check Existing Lead",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "pM0nnHa3DIm6R9f0",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst original = $('Prepare Lead Data').first().json;\n\n// Preserve the safety result from the incoming lead.\nconst safetyFlag =\n  $('Safety Check').first().json.safety_flag === true;\n\nconst normalizeEmail = value =>\n  String(value || '')\n    .trim()\n    .toLowerCase();\n\nconst normalizePhone = value =>\n  String(value || '')\n    .replace(/\\D/g, '');\n\nconst incomingEmail = normalizeEmail(\n  original.normalizedEmail || original.email\n);\n\nconst incomingPhone = normalizePhone(original.phone);\n\nconst incomingSubmissionId = String(\n  original.submission_id || ''\n).trim();\n\nconst incomingTime = new Date(original.submitted_at).getTime();\nconst twelveHours = 12 * 60 * 60 * 1000;\n\nconst rows = $input.all();\n\nconst duplicate = rows.some(item => {\n  const row = item.json;\n\n  const rowSubmissionId = String(\n    row.submission_id || ''\n  ).trim();\n\n  // 1. Identical submission ID means the same submission.\n  if (\n    incomingSubmissionId &&\n    rowSubmissionId &&\n    rowSubmissionId === incomingSubmissionId\n  ) {\n    return true;\n  }\n\n  // Everything below requires a valid timestamp.\n  const submittedAt = row.submitted_at;\n\n  if (!submittedAt) {\n    return false;\n  }\n\n  const rowTime = new Date(submittedAt).getTime();\n\n  if (\n    Number.isNaN(rowTime) ||\n    Number.isNaN(incomingTime)\n  ) {\n    return false;\n  }\n\n  // Only consider leads within the 12-hour window.\n  const timeDifference = Math.abs(incomingTime - rowTime);\n\n  if (timeDifference > twelveHours) {\n    return false;\n  }\n\n  const rowEmail = normalizeEmail(row.email);\n  const rowPhone = normalizePhone(row.phone);\n\n  // 2. Prefer email + phone when both are available.\n  if (\n    incomingEmail &&\n    incomingPhone &&\n    rowEmail === incomingEmail &&\n    rowPhone === incomingPhone\n  ) {\n    return true;\n  }\n\n  // 3. If incoming phone is missing, use email.\n  if (\n    incomingEmail &&\n    !incomingPhone &&\n    rowEmail === incomingEmail\n  ) {\n    return true;\n  }\n\n  // 4. If incoming email is missing, use phone.\n  if (\n    !incomingEmail &&\n    incomingPhone &&\n    rowPhone === incomingPhone\n  ) {\n    return true;\n  }\n\n  return false;\n});\n\nreturn [\n  {\n    json: {\n      ...original,\n      duplicate,\n      safety_flag: safetyFlag\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        448
+      ],
+      "id": "fcca9562-a653-43e8-9cc6-fed69d6952f2",
+      "name": "Normalise Lead data"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "68a6058f-829a-4705-8b95-2eeac3e82a46",
+              "leftValue": "={{ $json.duplicate }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        960,
+        448
+      ],
+      "id": "176f75dc-dbfe-4a44-b5ee-37830fce275f",
+      "name": "Lead Exists?"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "\nconst result = $json.output?.[0]?.content?.[0]?.text;\n\nif (!result || typeof result !== \"object\") {\n  throw new Error(\"AI returned no valid classification object\");\n}\n\nconst validLeadTypes = [\"hot\", \"warm\", \"cold\"];\n\nif (!validLeadTypes.includes(result.lead_type)) {\n  throw new Error(\n    `Invalid lead_type returned by AI: \"${result.lead_type}\". Expected hot, warm, or cold.`\n  );\n}\n\nif (!result.service) {\n  throw new Error(\"AI classification is missing service\");\n}\n\nconst validUrgencies = [\"urgent\", \"soon\", \"non_urgent\"];\n\nif (!validUrgencies.includes(result.urgency)) {\n  throw new Error(\"AI returned an invalid urgency\");\n}\n\nif (typeof result.needs_human_review !== \"boolean\") {\n  throw new Error(\"AI returned an invalid human-review flag\");\n}\n\n// Retrieve the original lead after duplicate checking.\nconst original = $('Normalise Lead data').first().json;\n\nconst safetyFlag = original.safety_flag === true;\n\n// Safety concerns must always receive human review.\nconst needsHumanReview =\n  safetyFlag || result.needs_human_review;\n\n// Safety concerns override ordinary lead classification.\nconst leadType = safetyFlag ? \"hot\" : result.lead_type;\nconst urgency = safetyFlag ? \"urgent\" : result.urgency;\n\nconst priorityMap = {\n  hot: \"high\",\n  warm: \"normal\",\n  cold: \"low\"\n};\n\nconst reviewReason = safetyFlag\n  ? \"Potential HVAC safety hazard. Immediate human review required.\"\n  : result.review_reason || \"\";\n\nreturn {\n  json: {\n    ...original,\n\n    lead_type: leadType,\n    service: result.service,\n    urgency,\n    reason: result.summary || \"No summary provided\",\n    priority: priorityMap[leadType],\n\n    safety_flag: safetyFlag,\n    needs_human_review: needsHumanReview,\n    review_reason: reviewReason\n  }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1664,
+        448
+      ],
+      "id": "fc18e217-b8e6-4b37-b081-369a4f7a5ae9",
+      "name": "Parse AI Classificatioin"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "4040913d-d861-4fb8-9a1c-c0478cb3d6aa",
+              "leftValue": "={{ $json.lead_type }}",
+              "rightValue": "hot",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2384,
+        448
+      ],
+      "id": "d6ba5b0f-fc95-40dc-bcbb-7ae0e3d92f2b",
+      "name": "Lead Temperature"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ee83c432-383e-465d-a61f-c694a49d705d",
+              "name": "priority",
+              "value": "={{ $json.priority }}",
+              "type": "string"
+            },
+            {
+              "id": "cd12416b-1d80-4bab-9a66-487cbdba8746",
+              "name": "submitted_at",
+              "value": "={{ $('Prepare Lead Data').item.json.submitted_at }}",
+              "type": "string"
+            },
+            {
+              "id": "cf9a56e0-03ad-4de9-8da4-d7862d7253b4",
+              "name": "name",
+              "value": "={{ $('Prepare Lead Data').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "1d21e473-a917-46a8-8435-1ee0589289f9",
+              "name": "email",
+              "value": "={{ $('Prepare Lead Data').item.json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "346b81f5-25aa-452e-9547-7308698601f4",
+              "name": "company",
+              "value": "={{ $('Prepare Lead Data').item.json.company }}",
+              "type": "string"
+            },
+            {
+              "id": "4331ae8b-3d8f-417f-904f-93a4453f6bb7",
+              "name": "message",
+              "value": "={{ $('Prepare Lead Data').item.json.message }}",
+              "type": "string"
+            },
+            {
+              "id": "eb8769a4-424b-4242-a337-097bbb39fc8c",
+              "name": "budget",
+              "value": "={{ $('Prepare Lead Data').item.json.budget }}",
+              "type": "string"
+            },
+            {
+              "id": "17b796a5-9381-431f-bb91-b1d111649158",
+              "name": "phone",
+              "value": "={{ $('Prepare Lead Data').item.json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "10ad57ab-17a7-4a4d-862d-3b15aa9c75c5",
+              "name": "submission_id",
+              "value": "={{ $('Prepare Lead Data').item.json.submission_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "include": "=all",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2576,
+        560
+      ],
+      "id": "922dc9cf-e0f7-4c65-a530-a0470cbf0b09",
+      "name": "Prepare Warm/Cold Lead"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "68b7b022-d821-428b-aba3-55941e74ca83",
+              "name": "priority",
+              "value": "high",
+              "type": "string"
+            },
+            {
+              "id": "a6c812d2-1253-49f9-87e9-a339e564a8bb",
+              "name": "submitted_at",
+              "value": "={{ $('Prepare Lead Data').item.json.submitted_at }}",
+              "type": "string"
+            },
+            {
+              "id": "2dbdf691-9ef2-49bb-b497-d6f5279520e8",
+              "name": "name",
+              "value": "={{ $('Prepare Lead Data').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "b6257719-dc47-48ce-ba8c-b389d7be9c89",
+              "name": "email",
+              "value": "={{ $('Prepare Lead Data').item.json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "34f53e84-bf0f-4e42-8a8c-2b839aa6013e",
+              "name": "company",
+              "value": "={{ $('Prepare Lead Data').item.json.company }}",
+              "type": "string"
+            },
+            {
+              "id": "902d03ad-bfd9-474f-b8cc-67d2249c259b",
+              "name": "message",
+              "value": "={{ $('Prepare Lead Data').item.json.message }}",
+              "type": "string"
+            },
+            {
+              "id": "f85f750f-0e14-4819-9f5c-d0aded998130",
+              "name": "budget",
+              "value": "={{ $('Prepare Lead Data').item.json.budget }}",
+              "type": "string"
+            },
+            {
+              "id": "f81bba66-7b22-456e-84c1-92b1ecf752b0",
+              "name": "phone",
+              "value": "={{ $('Prepare Lead Data').item.json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "d7148285-2333-4c47-a7d3-cc417f99778c",
+              "name": "submission_id",
+              "value": "={{ $('Prepare Lead Data').item.json.submission_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2576,
+        352
+      ],
+      "id": "fe61ee57-0bb0-439d-9d1a-9ebcc3b251d9",
+      "name": "Prepare Hot Lead"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        2848,
+        448
+      ],
+      "id": "5a3af69b-c4ae-4564-bb64-13d0a3840de6",
+      "name": "Merge Lead Data"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "06a6fd09-1e9e-4bbd-85aa-5668e7bd0eff",
+              "name": "status",
+              "value": "ai_failed",
+              "type": "string"
+            },
+            {
+              "id": "9b065fbd-c515-455c-89d6-26e750ed19d5",
+              "name": "error",
+              "value": "AI classification failed",
+              "type": "string"
+            },
+            {
+              "id": "0a55dfbc-d496-4ebd-988e-a09c0e8ee0a9",
+              "name": "timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1248,
+        656
+      ],
+      "id": "d0b01e5a-bf64-40ed-9f94-2d4046ffea1a",
+      "name": "AI Error Handler"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b11ccea5-a28e-4dfb-997a-e527de2422f0",
+              "name": "status",
+              "value": "rejected",
+              "type": "string"
+            },
+            {
+              "id": "aad84c14-6f73-487e-a436-3bd3d59c72d3",
+              "name": "reason",
+              "value": "duplicate leads detected",
+              "type": "string"
+            },
+            {
+              "id": "9572f657-445b-4554-94b4-f1b4df53abbf",
+              "name": "message",
+              "value": "This email has already submitted a request within the last 12 hours. Please try again after the 12-hour window has passed.",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        976,
+        672
+      ],
+      "id": "cc6b6bd0-0c13-4507-8593-178c0908d883",
+      "name": "Duplicate Lead Handler"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0",
+          "mode": "list",
+          "cachedResultName": "n8n practice spreadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1945007779,
+          "mode": "list",
+          "cachedResultName": "final lead management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit#gid=1945007779"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $json.name }}",
+            "lead_type": "=ai_failed",
+            "email": "={{ $json.email }}",
+            "company": "={{ $json.company }}",
+            "message": "={{ $json.message }}",
+            "budget": "=t{{ $json.budget }}",
+            "reason": "AI classification failed",
+            "priority": "normal",
+            "service": "Unknown",
+            "submitted_at": "=ubmitted_at{{ $('Normalise Lead data').item.json.submitted_at }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "budget",
+              "displayName": "budget",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lead_type",
+              "displayName": "lead_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "service",
+              "displayName": "service",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "submitted_at",
+              "displayName": "submitted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "response",
+              "displayName": "response",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1424,
+        656
+      ],
+      "id": "7e56a888-8421-494c-855e-3606bc11a8cc",
+      "name": "Log New Lead",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "pM0nnHa3DIm6R9f0",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = `Hi ${$json.name},\n\nThanks for reaching out about ${$json.service}. We’ve received your inquiry and will get back to you shortly.\n\nBest regards,\n${$('Client Config').item.json.business_name}`;\n\nreturn {\n  json: {\n    ...$json,\n    response: response\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3056,
+        448
+      ],
+      "id": "6d148497-6dfb-4f1a-90e8-93c2c9f204ff",
+      "name": "Build Email Data"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Re: Your inquiry about {{ $json.company }}",
+        "emailType": "text",
+        "message": "={{ $json.response }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3264,
+        448
+      ],
+      "id": "1651da03-ba3e-4574-8f5a-d29bfe4453b5",
+      "name": "Send Lead Response",
+      "webhookId": "e58988e2-ae2e-4dfc-a9d5-8c4208420e36",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CDXl2sH20cP5CW5f",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2065ed4c-a101-451a-9680-3b06bf9cf390",
+              "leftValue": "={{ $('Merge Lead Data').item.json.priority }}",
+              "rightValue": "high",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        3488,
+        448
+      ],
+      "id": "75057c54-a853-4e45-960e-0a8067d4be94",
+      "name": "Route Lead by Temperature"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0",
+          "mode": "list",
+          "cachedResultName": "n8n practice spreadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1945007779,
+          "mode": "list",
+          "cachedResultName": "final lead management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit#gid=1945007779"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": null,
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3824,
+        448
+      ],
+      "id": "4b452f84-6df3-458e-a1ab-5af8b4c3f0e1",
+      "name": "Log Hot Lead",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "pM0nnHa3DIm6R9f0",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cd6e3715-7388-478e-b425-50fce23fcf7a",
+              "name": "status",
+              "value": "sheets_failed",
+              "type": "string"
+            },
+            {
+              "id": "6788a263-3413-4666-866e-d6eed34525c4",
+              "name": "error",
+              "value": "Google sheets failed to save the lead",
+              "type": "string"
+            },
+            {
+              "id": "2a3089e3-5d0a-4b48-83ce-73d43568fb9e",
+              "name": "timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        4064,
+        448
+      ],
+      "id": "477a579a-56dd-4a10-adaf-3c7d8730d7ee",
+      "name": "Prepare Hot Lead Log"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0",
+          "mode": "list",
+          "cachedResultName": "n8n practice spreadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1945007779,
+          "mode": "list",
+          "cachedResultName": "final lead management",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/195g0gau0FhPN9AQvGEnTvPfnH0wkf4gU5XIKXDGDG_0/edit#gid=1945007779"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "name": "={{ $('Normalize Webhook Data').item.json.name }}",
+            "email": "={{ $('Normalize Webhook Data').item.json.email }}",
+            "company": "={{ $('Merge Lead Data').item.json.company || \"Not provided\" }}",
+            "message": "={{ $('Normalize Webhook Data').item.json.message }}",
+            "budget": "={{ $('Normalize Webhook Data').item.json.budget }}",
+            "lead_type": "={{ $('Parse AI Classificatioin').item.json.lead_type }}",
+            "reason": "={{ $('Parse AI Classificatioin').item.json.reason }}",
+            "service": "={{ $('Parse AI Classificatioin').item.json.service }}",
+            "submitted_at": "={{ $('Prepare Lead Data').item.json.submitted_at }}",
+            "priority": "={{ $('Parse AI Classificatioin').item.json.priority }}",
+            "response": "={{ $('Build Email Data').item.json.response }}",
+            "submission_id": "={{ $('Merge Lead Data').item.json.submission_id }}",
+            "phone": "={{ \"'\" + ($('Merge Lead Data').item.json.phone || \"Not provided\") }}",
+            "zip": "={{ $('Merge Lead Data').item.json.zip || \"Not provided\" }}",
+            "preferred_time": "={{ $('Merge Lead Data').item.json.preferred_time || \"Not provided\" }}",
+            "submitted_at_local": "={{ DateTime.fromISO($('Merge Lead Data').item.json.submitted_at).setZone($('Client Config').item.json.business_timezone).toFormat(\"MMMM d, yyyy 'at' h:mm a\") }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "budget",
+              "displayName": "budget",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_type",
+              "displayName": "lead_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "service",
+              "displayName": "service",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "submitted_at",
+              "displayName": "submitted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "submitted_at_local",
+              "displayName": "submitted_at_local",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "response",
+              "displayName": "response",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "submission_id",
+              "displayName": "submission_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "zip",
+              "displayName": "zip",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "preferred_time",
+              "displayName": "preferred_time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3824,
+        624
+      ],
+      "id": "a4f7be6d-56d4-4f17-aa57-436cfbdf2ec2",
+      "name": "Log Warm-Cold Lead",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "pM0nnHa3DIm6R9f0",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1b6b1f6a-504a-4a0d-9f66-6d3e222e259f",
+              "name": "status",
+              "value": "sheets_failed",
+              "type": "string"
+            },
+            {
+              "id": "520c315e-d71a-4ab8-914a-70acbee4c53e",
+              "name": "error",
+              "value": "Google sheets failed to save the lead",
+              "type": "string"
+            },
+            {
+              "id": "bae6b273-b836-424a-851e-90ed65e14c29",
+              "name": "timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        4064,
+        624
+      ],
+      "id": "76574235-8580-42fc-8cbf-225e5c6564f3",
+      "name": "Prepare Warm-Cold Lead Log"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f076ac35-1b10-46c0-a905-3710ba75a027",
+              "name": "status",
+              "value": "email_failed",
+              "type": "string"
+            },
+            {
+              "id": "28d3bc9d-9267-4281-9a3b-5e7712c1bf25",
+              "name": "error",
+              "value": "Gmail failed to send the email",
+              "type": "string"
+            },
+            {
+              "id": "ac144c91-a182-4744-9ded-19838d2303b2",
+              "name": "timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        3264,
+        624
+      ],
+      "id": "8ae841da-6f7c-4b51-a462-09561d3fea20",
+      "name": "Prepare Error Email"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Client Config').item.json.internal_email }}",
+        "subject": "⚠️ Lead Automation Error",
+        "message": "=<h2>⚠️ HVAC Lead Automation Error</h2>\n\n<p>A problem occurred while processing a lead.</p>\n\n<h3>Lead Details</h3>\n\n<p>\n<strong>Name:</strong> {{ $('Normalise Lead data').item.json.name }}<br>\n<strong>Email:</strong> {{ $('Normalise Lead data').item.json.email }}<br>\n<strong>Phone:</strong> {{ $('Normalise Lead data').item.json.phone || 'Not provided' }}<br>\n<strong>Company:</strong> {{ $('Normalise Lead data').item.json.company || 'Not provided' }}<br>\n<strong>Budget:</strong> {{ $('Normalise Lead data').item.json.budget || 'Not provided' }}\n</p>\n\n<h3>Customer Request</h3>\n\n<p>\n{{ $('Normalise Lead data').item.json.message }}\n</p>\n\n<h3>Error Details</h3>\n\n<p>\n<strong>Status:</strong> {{ $json.status }}<br>\n<strong>Error:</strong> {{ $json.error }}<br>\n<strong>Time:</strong> {{ DateTime.fromISO($('Normalise Lead data').first().json.submitted_at).setZone($('Client Config').first().json.business_timezone).toFormat(\"MMMM d, yyyy 'at' h:mm a\") }}\n</p>\n\n<hr>\n\n<p>\n<strong>⚡ MANUAL REVIEW REQUIRED</strong><br>\nPlease review the failed execution and handle the lead manually if necessary.\n</p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3824,
+        864
+      ],
+      "id": "81031db1-6a6d-442e-9298-9b9abc187131",
+      "name": "Send Error Notification",
+      "webhookId": "fb725e26-47f9-4a32-9b59-9e4aa129deb3",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CDXl2sH20cP5CW5f",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Client Config').item.json.internal_email }}",
+        "subject": "=🔥 HIGH-PRIORITY HVAC LEAD — {{ $('Merge Lead Data').item.json.service }}",
+        "message": "=<h2>🔥 HIGH-PRIORITY HVAC LEAD</h2>\n\n<p>A high-priority HVAC lead has been received.</p>\n\n<hr>\n\n<h3>Lead Details</h3>\n\n<p>\n<strong>Name:</strong> {{ $('Merge Lead Data').item.json.name }}<br>\n<strong>Email:</strong> {{ $('Merge Lead Data').item.json.email }}<br>\n<strong>Phone:</strong> {{ $('Merge Lead Data').item.json.phone || 'Not provided' }}<br>\n<strong>Company:</strong> {{ $('Merge Lead Data').item.json.company || 'Not provided' }}\n</p>\n\n<h3>Request</h3>\n\n<p>\n<strong>Service:</strong> {{ $('Merge Lead Data').item.json.service }}<br>\n<strong>Urgency:</strong> {{ $('Merge Lead Data').item.json.urgency }}\n</p>\n\n<p>\n<strong>Summary:</strong><br>\n{{ $('Merge Lead Data').item.json.reason }}\n</p>\n\n<p>\n<strong>Customer Message:</strong><br>\n{{ $('Merge Lead Data').item.json.message }}\n</p>\n\n<hr>\n\n<h3>⚡ Action Required</h3>\n\n<p>\n<strong>Please contact this customer as soon as possible.</strong>\n</p>\n\n<p>\n<strong>Lead received:</strong><br>\n{{ DateTime.now().setZone($('Client Config').item.json.business_timezone).toFormat(\"MMMM d, yyyy 'at' h:mm a\") }}\n</p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        3824,
+        1056
+      ],
+      "id": "8df6033b-12e7-45f3-8dc8-50e9fd8dba5c",
+      "name": "Send Lead Notification",
+      "webhookId": "fe4dfecd-fd46-4cb2-b04f-cb5523125b3b",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CDXl2sH20cP5CW5f",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9eefc67d-db7e-4602-9787-32fc0cd55c14",
+              "name": "submission_id",
+              "value": "={{ $json.body.submission_id ?? null }}",
+              "type": "string"
+            },
+            {
+              "id": "42c7ed41-714d-4f17-a88f-faefff460ca8",
+              "name": "name",
+              "value": "={{ $json.body.name ?? null }}",
+              "type": "string"
+            },
+            {
+              "id": "4c16fd3a-5025-4dbc-8d66-d86426e7d271",
+              "name": "email",
+              "value": "={{ $json.body.email ?? null }}",
+              "type": "string"
+            },
+            {
+              "id": "12d3b2e2-4a1f-49d1-bf36-36da6ff4de2d",
+              "name": "phone",
+              "value": "={{ $json.body.phone ?? null }}",
+              "type": "string"
+            },
+            {
+              "id": "f0327998-31a5-4e79-8bc1-bc663481a2a9",
+              "name": "company",
+              "value": "={{ $json.body.company ?? null }}",
+              "type": "string"
+            },
+            {
+              "id": "bd7fb07d-0bd2-4b73-9803-4ed1d73ae7b2",
+              "name": "message",
+              "value": "={{ $json.body.message ?? null }}",
+              "type": "string"
+            },
+            {
+              "id": "e14d1a57-d9e0-4593-88c1-a93f389acf11",
+              "name": "zip",
+              "value": "={{ $json.body.zip ?? null }}",
+              "type": "string"
+            },
+            {
+              "id": "07296a0b-16fc-49ea-9198-b4c529dbc79f",
+              "name": "service",
+              "value": "={{ $json.body.service ?? null }}",
+              "type": "string"
+            },
+            {
+              "id": "323ad6e1-60ba-474d-bd07-60b981f9edab",
+              "name": "preferred_time",
+              "value": "={{ $json.body.preferred_time ?? null }}",
+              "type": "string"
+            },
+            {
+              "id": "c07de42e-754d-430d-b297-89f65d7b29ac",
+              "name": "budget",
+              "value": "={{ $json.body.budget ?? null }}",
+              "type": "number"
+            },
+            {
+              "id": "069a0211-110c-40b4-9a51-2ad586b86279",
+              "name": "phone",
+              "value": "={{ $json.body.phone ?? null }}",
+              "type": "string"
+            },
+            {
+              "id": "2b11c105-bb30-4a80-a74f-34c33324e296",
+              "name": "client_id",
+              "value": "={{ $('Client Config').item.json.client_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -560,
+        448
+      ],
+      "id": "6137edc8-5f82-4e17-bd6a-f57b080408b4",
+      "name": "Normalize Webhook Data"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const missingFields = [];\n\nconst isEmpty = value =>\n  value === undefined ||\n  value === null ||\n  String(value).trim() === \"\";\n\nif (isEmpty($json.name)) {\n  missingFields.push(\"name\");\n}\n\nif (isEmpty($json.email)) {\n  missingFields.push(\"email\");\n}\n\nconst hasMessage = !isEmpty($json.message);\nconst hasService = !isEmpty($json.service);\n\nif (!hasMessage && !hasService) {\n  missingFields.push(\"message_or_service\");\n}\n\nreturn {\n  json: {\n    ...$json,\n    valid: missingFields.length === 0,\n    missingFields\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -352,
+        448
+      ],
+      "id": "2e611de8-64f3-45f0-8928-a4ca2b858ef2",
+      "name": "Validate Lead Data"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "71b75b82-fb59-49a5-9add-08c94a6c1159",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -128,
+        448
+      ],
+      "id": "287406dc-3926-4d5f-a8ea-266e9878bfc7",
+      "name": "Check Required Fields"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5b6696ce-c463-468a-b6b2-a29b404ebd9a",
+              "name": "status",
+              "value": "rejected",
+              "type": "string"
+            },
+            {
+              "id": "cd924aba-f669-480d-92dc-e2bf50c1cf7b",
+              "name": "missingfields",
+              "value": "={{ $json.missingFields.join(\", \") }}",
+              "type": "string"
+            },
+            {
+              "id": "3be984d0-73e8-4c7b-aa19-5e6463b77acd",
+              "name": "message",
+              "value": "please provide all required fields",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -128,
+        672
+      ],
+      "id": "b3497f07-d824-47fb-bcb1-55166957c640",
+      "name": "Handle Missing Fields"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-5-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "=You are an HVAC lead qualification and service identification system.\n\nAnalyze ONLY the single customer lead provided below.\n\nYour job has FOUR tasks:\n\n1. Identify the specific HVAC service the customer appears to need.\n2. Determine how urgent the customer's situation is.\n3. Classify the lead as exactly ONE of:\n   - hot\n   - warm\n   - cold\n4. Write a short factual summary of the customer's situation.\n\nLEAD DATA:\n\nName: {{ $json.name }}\nEmail: {{ $json.email }}\nCompany: {{ $json.company }}\nMessage: {{ $json.message }}\nBudget: {{ $json.budget }}\n\n\nSERVICE IDENTIFICATION\n\nDetermine the most specific HVAC service that matches the customer's actual problem.\n\nExamples include:\n\n- AC repair\n- AC installation\n- AC replacement\n- AC maintenance\n- AC inspection\n- Furnace repair\n- Furnace installation\n- Furnace replacement\n- Furnace maintenance\n- Heating repair\n- Heating installation\n- Heat pump repair\n- Heat pump installation\n- Ductwork repair\n- Ductwork installation\n- Indoor air quality service\n- Commercial HVAC service\n- Emergency HVAC repair\n\nYou may use another specific HVAC service if the customer's message clearly describes one.\n\nDo NOT invent a service that is not supported by the customer's message.\n\nIf the customer does not provide enough information to identify a specific service, use:\n\n\"general HVAC consultation\"\n\n\nURGENCY CLASSIFICATION\n\nClassify urgency as exactly ONE of:\n\n\"urgent\"\n\"soon\"\n\"non_urgent\"\n\nUse these rules:\n\nURGENT:\n- The HVAC system has completely failed.\n- There is no heating or cooling when it is needed.\n- The customer describes an emergency situation.\n- The customer explicitly needs service immediately, today, or as soon as possible.\n- The problem could reasonably require immediate attention.\n\nSOON:\n- The customer has a real HVAC problem but does not require immediate service.\n- The customer wants the issue addressed within the next few days or weeks.\n- The customer is actively looking for repair, replacement, installation, or maintenance.\n\nNON_URGENT:\n- The customer is only asking general questions.\n- The customer is researching future options.\n- The customer is asking about maintenance or replacement without an immediate problem.\n- The customer does not currently need service.\n\n\nLEAD TEMPERATURE\n\nClassify the lead as exactly ONE of:\n\n\"hot\"\n\"warm\"\n\"cold\"\n\n\nSTEP 1 — COLD CHECK\n\nClassify as COLD if ANY of these are true:\n\n- The customer is only casually browsing.\n- - The customer is only browsing or researching HVAC services and does not indicate a current service need or intent to obtain service.\n- The customer says they are not planning to hire anyone.\n- The customer has no identifiable HVAC problem, service need, or desired outcome.\n- The customer shows little or no interest in actually obtaining HVAC service.\n- The customer is only asking general informational questions with no indication that they currently need service.\n\nIf the lead clearly matches a COLD condition, classify it as COLD and stop.\n\nIMPORTANT:\nDo not classify a lead as COLD based only on phrases such as \"just looking\" or \"just browsing.\"\n\nAlways consider the full message.\n\nFor example:\n\"I'm just looking for someone to fix my AC today.\"\nhas a specific service need, active service intent, and near-term urgency, so it should NOT be classified as COLD.\n\n\nSTEP 2 — HOT CHECK\n\nClassify as HOT when ALL THREE conditions are satisfied:\n\nA. SPECIFIC SERVICE NEED\n\nThe customer clearly describes an HVAC problem or a specific service they want.\n\nExamples:\n\n- AC stopped cooling.\n- Furnace stopped working.\n- Need a new AC installed.\n- Want to replace an old HVAC system.\n- Need a technician to repair a heating system.\n- Need ductwork repaired.\n\nAND\n\nB. ACTIVE SERVICE INTENT\n\nThe customer clearly wants the problem addressed or wants to obtain the service.\n\nActive intent includes statements such as:\n\n- \"we need someone to fix this\"\n- \"we need a technician\"\n- \"we want to schedule service\"\n- \"we need someone to come out\"\n- \"we want to get this fixed\"\n- \"we need this repaired\"\n- \"we want to replace our AC\"\n- \"we want to install a new system\"\n- \"we would like to schedule an appointment\"\n- \"we need service today\"\n- \"we need someone this week\"\n\nAND\n\nC. SUFFICIENT URGENCY\n\nThe situation is urgent or the customer has a clear near-term need.\n\nA lead can be HOT even if they do not provide a budget.\n\nFor HVAC services, do NOT require a stated budget to classify a lead as HOT.\n\nIf A + B + C are satisfied, classify as HOT.\n\n\nSTEP 3 — WARM\n\nClassify as WARM when:\n\n- The customer has a genuine HVAC problem or service need,\n- But their intent to obtain service is weaker, uncertain, or exploratory.\n\nExamples:\n\n- They have an HVAC problem but are mainly asking what it might cost.\n- They are researching repair or replacement options.\n- They describe a problem but have not indicated that they want to schedule service.\n- They are considering replacing their system but have not decided to proceed.\n- They have a real need but are only comparing options.\n- They want service eventually but there is no clear near-term action.\n\nA lead does NOT need to provide a budget to be WARM.\n\n\nIMPORTANT RULES\n\n- Do not classify a lead as HOT merely because they mention a large budget.\n- Do not classify a lead as HOT merely because the problem sounds serious.\n- Do not classify a lead as COLD merely because no budget is provided.\n- For HVAC leads, the customer's problem, service intent, and timing are more important than budget.\n- Use ONLY information contained in the lead data.\n- Do not invent facts.\n- Do not assume a service that the customer did not indicate.\n- Keep the summary factual and concise.\n\n\nSUMMARY\n\nWrite a short summary describing:\n\n- What problem the customer has or what service they want.\n- Any important timing or urgency mentioned.\n- Any relevant information needed by the HVAC company.\n\nDo not include information that is not present in the lead.\n\nSUMMARY RULES:\n- The summary must describe ONLY the customer's HVAC need, problem, urgency, and requested service.\n- Do NOT include the customer's name, email address, phone number, company name, budget, ZIP code, or other contact/personal information.\n- Do NOT add information that is not explicitly stated or reasonably inferred from the customer's message.\n- Keep the summary concise and factual.\n\n\nHUMAN REVIEW RULES\n\nSet needs_human_review to true when:\n- The customer's message is ambiguous or contradictory.\n- There is insufficient information to determine urgency reliably.\n- The problem is intermittent and its severity is unclear.\n- The message suggests a possible safety hazard, including a gas leak, carbon monoxide, smoke, fire, or electrical sparking.\n\nSet needs_human_review to false when the service need and urgency are sufficiently clear and no safety concerns are present.\n\nWhen needs_human_review is true, explain the specific reason in review_reason.\n\nWhen needs_human_review is false, set review_reason to an empty string.\n\nNever assume that informal language, jokes, or a low budget mean a problem is non-urgent.\n\nSAFETY RULES\n\nIf the message suggests a gas leak, carbon monoxide exposure, fire, smoke, or another immediate safety hazard:\n- Set urgency to urgent.\n- Set lead_type to hot.\n- Set needs_human_review to true.\n- Explain the safety concern in review_reason.\n\nDo not treat potential safety emergencies as ordinary repair inquiries.\n\n\n\nOUTPUT RULES\n\nReturn ONLY valid JSON.\n\nDo not return markdown.\nDo not return explanations outside the JSON.\nDo not use uppercase values.\nDo not add extra fields.\n\nThe lead_type value MUST be exactly one of:\n\n\"hot\"\n\"warm\"\n\"cold\"\n\nThe urgency value MUST be exactly one of:\n\n\"urgent\"\n\"soon\"\n\"non_urgent\"\n\nRequired JSON format:\n\n{\n  \"lead_type\": \"hot\",\n  \"service\": \"AC repair\",\n  \"urgency\": \"urgent\",\n  \"summary\": \"Customer's commercial AC has stopped cooling and they need a technician today.\"\n}\n"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {
+          "textFormat": {
+            "textOptions": {
+              "type": "json_schema",
+              "name": "hvac_lead_analysis",
+              "schema": "\n{\n  \"type\": \"object\",\n  \"properties\": {\n    \"lead_type\": {\n      \"type\": \"string\",\n      \"enum\": [\"hot\", \"warm\", \"cold\"]\n    },\n    \"service\": {\n      \"type\": \"string\"\n    },\n    \"urgency\": {\n      \"type\": \"string\",\n      \"enum\": [\"urgent\", \"soon\", \"non_urgent\"]\n    },\n    \"summary\": {\n      \"type\": \"string\"\n    },\n    \"needs_human_review\": {\n      \"type\": \"boolean\"\n    },\n    \"review_reason\": {\n      \"type\": \"string\"\n    }\n  },\n  \"required\": [\n    \"lead_type\",\n    \"service\",\n    \"urgency\",\n    \"summary\",\n    \"needs_human_review\",\n    \"review_reason\"\n  ],\n  \"additionalProperties\": false\n}\n",
+              "strict": true
+            }
+          }
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        1200,
+        432
+      ],
+      "id": "616617ac-6b48-4ad4-90fe-68a9ddfc8198",
+      "name": "AI Classification",
+      "alwaysOutputData": false,
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "07171c0e-975d-40c9-9a7d-a4feec754e47",
+              "name": "business_name",
+              "value": "Demo HVAC Company",
+              "type": "string"
+            },
+            {
+              "id": "0c05c1fd-0a4e-4095-942a-2135000f2ea6",
+              "name": "business_type",
+              "value": "HVAC services",
+              "type": "string"
+            },
+            {
+              "id": "0716da92-98eb-42d6-a570-1d843631a991",
+              "name": "internal_email",
+              "value": "ashwinchoudhary2007@gmail.com",
+              "type": "string"
+            },
+            {
+              "id": "47db32a1-bafb-472c-a6e1-b61406ce1cb1",
+              "name": "business_timezone",
+              "value": "Asia/Kolkata",
+              "type": "string"
+            },
+            {
+              "id": "1d7ddb0d-4472-4619-9ce2-9663fcfa05d4",
+              "name": "client_id ",
+              "value": "=demo-hvac-001",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        -768,
+        448
+      ],
+      "id": "6fc4c215-d80c-48e1-976f-e29426683eae",
+      "name": "Client Config"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a4ed3741-88d2-4dd2-8187-0b788c820196",
+              "name": "status",
+              "value": "ai_failed",
+              "type": "string"
+            },
+            {
+              "id": "f6dd078a-21be-4d4e-97e2-34de1e4a8844",
+              "name": "error",
+              "value": "AI classification failed, but the lead was successfully saved to Google Sheets",
+              "type": "string"
+            },
+            {
+              "id": "529d8a1b-6f95-4282-bdb5-dc1d66658804",
+              "name": "timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1616,
+        656
+      ],
+      "id": "3c6cf844-7ce8-41f3-913d-c7ba7930baf6",
+      "name": "Prepare AI Error log"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8d9949e8-5ff0-41c9-b114-94411be55b22",
+              "name": "status",
+              "value": "ai_and_sheets_failed",
+              "type": "string"
+            },
+            {
+              "id": "5b55c623-5a58-4f23-871b-989936e0705f",
+              "name": "error",
+              "value": "AI classification failed and Google Sheets failed to save the lead",
+              "type": "string"
+            },
+            {
+              "id": "45b56416-5262-4597-95f0-55a97bda3483",
+              "name": "timestamp",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1616,
+        816
+      ],
+      "id": "f48845a7-d36b-42fb-984d-ff5a6a04241e",
+      "name": "Prepare AI + Sheets Error Log"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Lead received successfully\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        4064,
+        288
+      ],
+      "id": "ec71c9be-66bd-4956-be03-862dc4c29da3",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst items = $input.all();\n\nreturn items.map(item => {\n  const original = item.json;\n\n  const message = String(original.message ?? \"\")\n    .toLowerCase()\n    .replace(/[’‘]/g, \"'\")\n    .replace(/\\s+/g, \" \")\n    .trim();\n\n  // Split at sentence boundaries and contrast words.\n  // This helps distinguish:\n  // \"No smoke, but I smell gas.\"\n  // from:\n  // \"There are no unusual smells, smoke, or electrical issues.\"\n  const clauses = message\n    .split(/[.!?;]|\\b(?:but|however|although)\\b/g)\n    .map(s => s.trim())\n    .filter(Boolean);\n\n  const hazardDefinitions = [\n    {\n      name: \"gas\",\n      positive: [\n        /\\b(?:smell|smells|smelling|odor|odour|scent)\\b.{0,50}\\bgas\\b/,\n        /\\bgas\\b.{0,50}\\b(?:smell|smells|smelling|odor|odour|scent)\\b/,\n        /\\bgas (?:leak|leaking|escaping)\\b/,\n        /\\b(?:leaking|leak)\\b.{0,35}\\bgas\\b/,\n        /\\brotten eggs?\\b/\n      ],\n      terms: [\n        /\\bgas\\b/,\n        /\\brotten eggs?\\b/\n      ]\n    },\n    {\n      name: \"smoke_or_fire\",\n      positive: [\n        /\\bsmoke\\b/,\n        /\\bsmoking\\b/,\n        /\\bflames?\\b/,\n        /\\b(?:on fire|caught fire|electrical fire)\\b/,\n        /\\bburning (?:smell|odor|odour|wires?|plastic)\\b/\n      ],\n      terms: [\n        /\\bsmoke\\b/,\n        /\\bsmoking\\b/,\n        /\\bflames?\\b/,\n        /\\bfire\\b/,\n        /\\bburning (?:smell|odor|odour)\\b/\n      ]\n    },\n    {\n      name: \"electrical\",\n      positive: [\n        /\\bsparks?\\b/,\n        /\\bsparking\\b/,\n        /\\belectrical (?:fire|burning|smell|smoke|hazard|issues?)\\b/,\n        /\\b(?:exposed|burning) wires?\\b/\n      ],\n      terms: [\n        /\\bsparks?\\b/,\n        /\\bsparking\\b/,\n        /\\belectrical\\b/,\n        /\\b(?:exposed|burning) wires?\\b/\n      ]\n    },\n    {\n      name: \"carbon_monoxide\",\n      positive: [\n        /\\bcarbon monoxide\\b/,\n        /\\bco (?:detector|alarm)\\b/\n      ],\n      terms: [\n        /\\bcarbon monoxide\\b/,\n        /\\bco (?:detector|alarm)\\b/\n      ]\n    }\n  ];\n\n  // Explicit denial at the start of a clause.\n  const denialStart =\n    /\\b(?:no|without|none of|not experiencing|not seeing|not smelling|don't have|do not have|haven't noticed|have not noticed|there (?:is|are) no)\\b/;\n\n  // Identify whether a hazard term falls within an explicit\n  // denial. Covers lists such as:\n  // \"no unusual smells, smoke, or electrical issues\".\n  function getDeniedText(clause) {\n    const match = denialStart.exec(clause);\n\n    if (!match) return \"\";\n\n    const afterDenial = clause.slice(\n      match.index + match[0].length\n    );\n\n    // A denial must not extend into a new positive report.\n    return afterDenial.split(\n      /\\b(?:but|however|although|except|yet)\\b/\n    )[0];\n  }\n\n  function evaluateHazard(hazard) {\n    let detected = false;\n    let denied = false;\n\n    for (const clause of clauses) {\n      const deniedText = getDeniedText(clause);\n\n      const hazardDenied = deniedText &&\n        hazard.terms.some(pattern =>\n          pattern.test(deniedText)\n        );\n\n      if (hazardDenied) {\n        denied = true;\n      }\n\n      // Remove explicitly denied text before looking for\n      // positive hazard reports in the same clause.\n      let positiveText = clause;\n\n      if (deniedText) {\n        const denialMatch = denialStart.exec(clause);\n\n        positiveText = clause.slice(\n          0,\n          denialMatch.index\n        );\n\n        // Retain any text after a contrast expression.\n        const contrast = clause.match(\n          /\\b(?:but|however|although|except|yet)\\b/\n        );\n\n        if (contrast) {\n          positiveText += \" \" + clause.slice(\n            contrast.index + contrast[0].length\n          );\n        }\n      }\n\n      if (\n        hazard.positive.some(pattern =>\n          pattern.test(positiveText)\n        )\n      ) {\n        detected = true;\n      }\n    }\n\n    return {\n      hazard: hazard.name,\n      detected,\n      denied\n    };\n  }\n\n  const findings = hazardDefinitions.map(\n    evaluateHazard\n  );\n\n  const detectedHazards = findings\n    .filter(finding => finding.detected)\n    .map(finding => finding.hazard);\n\n  // Unusual or unidentified smells should receive human\n  // review even without a confirmed hazard.\n  const ambiguousPatterns = [\n    /\\b(?:strange|weird|funny|unusual|odd|unknown)\\b.{0,35}\\b(?:smell|smells|odor|odour)\\b/,\n    /\\b(?:smell|smells|odor|odour)\\b.{0,35}\\b(?:strange|weird|funny|unusual|odd)\\b/,\n    /\\b(?:smell|smells|odor|odour)\\b.{0,35}\\b(?:not sure|unsure|can't tell)\\b/\n  ];\n\n  const ambiguous = clauses.some(clause => {\n    const deniedText = getDeniedText(clause);\n\n    let textToCheck = clause;\n\n    if (deniedText) {\n      const denialMatch = denialStart.exec(clause);\n\n      textToCheck = clause.slice(\n        0,\n        denialMatch.index\n      );\n    }\n\n    return ambiguousPatterns.some(pattern =>\n      pattern.test(textToCheck)\n    );\n  });\n\n  // If the customer reports a possible hazard using\n  // uncertain language, send it for review.\n  const uncertaintyPatterns = [\n    /\\b(?:maybe|possibly|might be|could be|not sure if|unsure if)\\b.{0,60}\\b(?:gas|smoke|fire|sparks?|carbon monoxide|burning)\\b/,\n    /\\b(?:gas|smoke|fire|sparks?|carbon monoxide|burning)\\b.{0,60}\\b(?:maybe|possibly|not sure|unsure)\\b/\n  ];\n\n  const uncertainHazard = clauses.some(clause =>\n    uncertaintyPatterns.some(pattern =>\n      pattern.test(clause)\n    )\n  );\n\n  const safetyFlag = detectedHazards.length > 0;\n\n  const needsHumanReview =\n    safetyFlag ||\n    ambiguous ||\n    uncertainHazard;\n\n  let reviewReason = \"\";\n\n  if (safetyFlag) {\n    reviewReason =\n      `Potential safety hazard: ${detectedHazards.join(\", \")}. Immediate human review required.`;\n  } else if (uncertainHazard) {\n    reviewReason =\n      \"Customer describes a possible safety hazard with uncertainty. Human review required.\";\n  } else if (ambiguous) {\n    reviewReason =\n      \"Unclear odor or possible safety concern. Human review required.\";\n  }\n\n  return {\n    json: {\n      ...original,\n      safety_flag: safetyFlag,\n      needs_human_review: needsHumanReview,\n      review_reason: reviewReason,\n      detected_hazards: detectedHazards,\n      safety_findings: findings\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        448
+      ],
+      "id": "6b24b7a2-7255-4fff-8cbf-2d65000de0ee",
+      "name": "Safety Check"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "ad1e8181-716e-4ad1-8f34-c441e874c43a",
+              "leftValue": "={{ $json.safety_flag }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1888,
+        448
+      ],
+      "id": "d7137dfc-b98e-44c1-9160-c362b23a4e38",
+      "name": "Safety Emergency"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1dc71a86-423a-4f81-84a2-e06c5b55c3e8",
+              "name": "response",
+              "value": "= Hi {{ $json.name }},  Your message describes a possible HVAC safety hazard.  If you smell gas, leave the building immediately. Do not operate electrical switches, use flames, or attempt to inspect or repair the equipment.  Once you are safely outside, contact your gas utility's emergency line or local emergency services.  Do not re-enter until emergency personnel or the gas utility confirm it is safe.  Your request has been flagged for urgent human review. Please do not wait for our response before taking safety precautions.  {{ $('Client Config').first().json.business_name }}",
+              "type": "string"
+            },
+            {
+              "id": "41cd6aa3-5628-419e-b71f-fe221a6967c5",
+              "name": "notification_type",
+              "value": "safety_emergency",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1888,
+        144
+      ],
+      "id": "f1140364-aeaa-486f-9838-1bbf872c2792",
+      "name": "Prepare Safety Response"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "Important safety information regarding your HVAC request",
+        "emailType": "text",
+        "message": "={{ $json.response }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2064,
+        144
+      ],
+      "id": "4ad1901b-4b77-4655-a8ac-dc75bc52ec45",
+      "name": "Send Safety Email",
+      "webhookId": "55081791-6835-412c-ace1-7039756f2330",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CDXl2sH20cP5CW5f",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Client Config').first().json.internal_email }}",
+        "subject": "=🚨 SAFETY ALERT — {{ $('Prepare Safety Response').first().json.name }}",
+        "message": "= <h2>🚨 URGENT HVAC SAFETY ALERT</h2>  <p>A customer has reported a potential HVAC safety hazard. Immediate human review is required.</p>  <hr>  <h3>Customer Details</h3>  <p> <strong>Name:</strong> {{ $('Prepare Safety Response').first().json.name }}<br>  <strong>Email:</strong> {{ $('Prepare Safety Response').first().json.email }}<br>  <strong>Phone:</strong> {{ $('Prepare Safety Response').first().json.phone || 'Not provided' }}<br>  <strong>Company:</strong> {{ $('Prepare Safety Response').first().json.company || 'Not provided' }} </p>  <h3>Reported Problem</h3>  <p>{{ $('Prepare Safety Response').first().json.message }}</p>  <h3>Classification</h3>  <p> <strong>Service:</strong> {{ $('Prepare Safety Response').first().json.service }}<br>  <strong>Urgency:</strong> URGENT<br>  <strong>Review reason:</strong> {{ $('Prepare Safety Response').first().json.review_reason }} </p>  <hr>  <p><strong>ACTION REQUIRED:</strong> Review this request immediately and follow your emergency response procedure. Do not rely on email alone for emergency dispatch.</p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2064,
+        272
+      ],
+      "id": "a004d84b-6e84-4c4b-b506-45baf0daf55e",
+      "name": "Send Safety Alert",
+      "webhookId": "d5206a29-794b-4367-a169-4de9da7743cc",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CDXl2sH20cP5CW5f",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1s2OkH1m684T1rsOPl6j6AeS5FrEYHyxydRfmxAO8rG8",
+          "mode": "list",
+          "cachedResultName": "Safety Incidents",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1s2OkH1m684T1rsOPl6j6AeS5FrEYHyxydRfmxAO8rG8/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1s2OkH1m684T1rsOPl6j6AeS5FrEYHyxydRfmxAO8rG8/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "action_status": "Pending review",
+            "response": "={{ $json.response }}",
+            "submitted_at_local": "={{ DateTime.fromISO($json.submitted_at).setZone($('Client Config').first().json.business_timezone).toFormat(\"MMMM d, yyyy 'at' h:mm a\") }}",
+            "submitted_at": "={{ $json.submitted_at }}",
+            "review_reason": "={{ $json.review_reason }}",
+            "needs_human_review": "={{ $json.needs_human_review }}",
+            "safety_flag": "={{ $json.safety_flag }}",
+            "reason": "={{ $json.reason }}",
+            "urgency": "={{ $json.urgency }}",
+            "service": "={{ $json.service }}",
+            "priority": "={{ $json.priority }}",
+            "lead_type": "={{ $json.lead_type }}",
+            "budget": "={{ $json.budget }}",
+            "message": "={{ $json.message }}",
+            "company": "={{ $json.company || \"Not provided\" }}",
+            "phone": "={{ \"'\" + ($json.phone || \"Not provided\") }}",
+            "email": "={{ $json.email }}",
+            "name": "={{ $json.name }}",
+            "submission_id": "={{ $json.submission_id }}",
+            "client_id": "={{ $json.client_id || \"demo-hvac\" }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "submission_id",
+              "displayName": "submission_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "budget",
+              "displayName": "budget",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lead_type",
+              "displayName": "lead_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "service",
+              "displayName": "service",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reason",
+              "displayName": "reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "safety_flag",
+              "displayName": "safety_flag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "needs_human_review",
+              "displayName": "needs_human_review",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "review_reason",
+              "displayName": "review_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "submitted_at",
+              "displayName": "submitted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "submitted_at_local",
+              "displayName": "submitted_at_local",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "response",
+              "displayName": "response",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "action_status",
+              "displayName": "action_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "client_id",
+              "displayName": "client_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2064,
+        -16
+      ],
+      "id": "7f85a5c4-e8a9-473d-ab0b-60a6a15df254",
+      "name": "Log Safety Lead",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "pM0nnHa3DIm6R9f0",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "af561bad-10e0-49ef-8008-122f64e33a9b",
+              "leftValue": "={{ $json.needs_human_review }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2112,
+        448
+      ],
+      "id": "073ec356-4f4b-4fb5-a100-4c0ba84b190e",
+      "name": "Needs Human Review?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "bec45415-7b81-4907-89b7-2a13f63cdaef",
+              "name": "review_status",
+              "value": "Pending review",
+              "type": "string"
+            },
+            {
+              "id": "93e808ad-cc50-4236-a7cf-234fad2249ac",
+              "name": "response",
+              "value": "= {{ `Hi ${$json.name},  Thanks for contacting ${$('Client Config').first().json.business_name}.  We've received your message. Our team needs to review the details of your request before recommending the next step. We'll get back to you as soon as possible.  If you suspect an immediate safety hazard, stop using the equipment and contact the appropriate emergency service rather than waiting for our reply.  Best regards, ${$('Client Config').first().json.business_name}` }}",
+              "type": "string"
+            },
+            {
+              "id": "97e751b3-4109-4fbf-ac5f-e035fb2c5360",
+              "name": "review_reason",
+              "value": "={{ $json.review_reason }}",
+              "type": "string"
+            },
+            {
+              "id": "991423a0-f328-4d26-b7d6-ad0ddabc5ec5",
+              "name": "client_id",
+              "value": "={{ $('Client Config').item.json['client_id '] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        2384,
+        176
+      ],
+      "id": "bc66a606-40db-4f71-b743-e6fe35b104d3",
+      "name": "Prepare Human Review"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Client Config').first().json.internal_email }}",
+        "subject": "={{ \"⚠️ HUMAN REVIEW REQUIRED — \" + $json.name }}",
+        "message": "= <h2>⚠️ HVAC Lead — Human Review Required</h2>  <p>A customer has submitted a request that needs manual assessment.</p>  <h3>Customer Details</h3> <p>   <strong>Name:</strong> {{ $json.name }}<br>   <strong>Email:</strong> {{ $json.email }}<br>   <strong>Phone:</strong> {{ $json.phone || 'Not provided' }}<br>   <strong>Company:</strong> {{ $json.company || 'Not provided' }} </p>  <h3>Request</h3> <p>   <strong>Service:</strong> {{ $json.service }}<br>   <strong>Urgency:</strong> {{ $json.urgency }}<br>   <strong>Customer message:</strong> {{ $json.message }} </p>  <h3>Why it needs review</h3> <p>{{ $json.review_reason }}</p>  <hr>  <p><strong>Status:</strong> Pending review</p> <p><strong>Action required:</strong> Review the customer's description, assess any potential safety concerns, and contact them to determine the appropriate next step.</p>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        2576,
+        176
+      ],
+      "id": "54d57993-b99d-44af-96bb-a29198a57e68",
+      "name": "Send Human Review Alert",
+      "webhookId": "dd98a667-903c-4b1f-b0e0-7ca5a4e501b6",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CDXl2sH20cP5CW5f",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "1dGUjpOoSlstJ8eDgIVtyX1nkmROb5MLqdf0fjod0irk",
+          "mode": "list",
+          "cachedResultName": "Human Review",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1dGUjpOoSlstJ8eDgIVtyX1nkmROb5MLqdf0fjod0irk/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1dGUjpOoSlstJ8eDgIVtyX1nkmROb5MLqdf0fjod0irk/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "submission_id": "={{ $('Prepare Human Review').first().json.submission_id || '' }}",
+            "name": "={{ $('Prepare Human Review').first().json.name }}",
+            "email": "={{ $('Prepare Human Review').first().json.email }}",
+            "phone": "={{ \"'\" + ($('Prepare Human Review').first().json.phone || \"Not provided\") }}",
+            "company": "={{ $('Prepare Human Review').first().json.company || \"Not provided\" }}",
+            "message": "={{ $('Prepare Human Review').first().json.message }}",
+            "service": "={{ $('Prepare Human Review').first().json.service }}",
+            "urgency": "={{ $('Prepare Human Review').first().json.urgency }}",
+            "lead_type": "={{ $('Prepare Human Review').first().json.lead_type }}",
+            "priority": "={{ $('Prepare Human Review').first().json.priority }}",
+            "review_reason": "={{ $('Prepare Human Review').first().json.review_reason }}",
+            "needs_human_review": "={{ $('Prepare Human Review').first().json.needs_human_review }}",
+            "safety_flag": "={{ $('Prepare Human Review').first().json.safety_flag }}",
+            "submitted_at": "={{ $('Prepare Human Review').first().json.submitted_at }}",
+            "submitted_at_local": "= {{ DateTime.fromISO($('Prepare Human Review').first().json.submitted_at).setZone($('Client Config').first().json.business_timezone).toFormat(\"MMMM d, yyyy 'at' h:mm a\") }}",
+            "action_status": "Pending review",
+            "client_id": "={{ $('Client Config').item.json['client_id '] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "submission_id",
+              "displayName": "submission_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "service",
+              "displayName": "service",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "lead_type",
+              "displayName": "lead_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "review_reason",
+              "displayName": "review_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "needs_human_review",
+              "displayName": "needs_human_review",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "safety_flag",
+              "displayName": "safety_flag",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "submitted_at",
+              "displayName": "submitted_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "submitted_at_local",
+              "displayName": "submitted_at_local",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "action_status",
+              "displayName": "action_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "client_id",
+              "displayName": "client_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2800,
+        80
+      ],
+      "id": "086cc947-0c12-4950-a4db-5b94b28ea5db",
+      "name": "Log Human Review Lead",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "pM0nnHa3DIm6R9f0",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Client Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Safety Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Existing Lead": {
+      "main": [
+        [
+          {
+            "node": "Normalise Lead data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalise Lead data": {
+      "main": [
+        [
+          {
+            "node": "Lead Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Exists?": {
+      "main": [
+        [
+          {
+            "node": "AI Classification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Duplicate Lead Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Classificatioin": {
+      "main": [
+        [
+          {
+            "node": "Safety Emergency",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Temperature": {
+      "main": [
+        [
+          {
+            "node": "Prepare Hot Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Warm/Cold Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Warm/Cold Lead": {
+      "main": [
+        [
+          {
+            "node": "Merge Lead Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Prepare Hot Lead": {
+      "main": [
+        [
+          {
+            "node": "Merge Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Build Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Error Handler": {
+      "main": [
+        [
+          {
+            "node": "Log New Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log New Lead": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Error log",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare AI + Sheets Error Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email Data": {
+      "main": [
+        [
+          {
+            "node": "Send Lead Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Lead Response": {
+      "main": [
+        [
+          {
+            "node": "Route Lead by Temperature",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Error Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Lead by Temperature": {
+      "main": [
+        [
+          {
+            "node": "Send Lead Notification",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Hot Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Warm-Cold Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Hot Lead": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Hot Lead Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Hot Lead Log": {
+      "main": [
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Warm-Cold Lead": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Warm-Cold Lead Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Warm-Cold Lead Log": {
+      "main": [
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Error Email": {
+      "main": [
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Webhook Data": {
+      "main": [
+        [
+          {
+            "node": "Validate Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Check Required Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Required Fields": {
+      "main": [
+        [
+          {
+            "node": "Prepare Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Missing Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Classification": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Classificatioin",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Client Config": {
+      "main": [
+        [
+          {
+            "node": "Normalize Webhook Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI Error log": {
+      "main": [
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI + Sheets Error Log": {
+      "main": [
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safety Check": {
+      "main": [
+        [
+          {
+            "node": "Check Existing Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safety Emergency": {
+      "main": [
+        [
+          {
+            "node": "Prepare Safety Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Needs Human Review?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Safety Response": {
+      "main": [
+        [
+          {
+            "node": "Send Safety Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Safety Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Safety Email": {
+      "main": [
+        [
+          {
+            "node": "Send Safety Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Needs Human Review?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Human Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Lead Temperature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Human Review": {
+      "main": [
+        [
+          {
+            "node": "Send Human Review Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Human Review Alert": {
+      "main": [
+        [
+          {
+            "node": "Log Human Review Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "RQEAOB0ixyBWEyNt",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "bd81b19c-b838-4b85-b1a3-96f310f587c2",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "844346bb3f1ffe5ef11581e9280e4d9f6efc85eac7b390fb8d0e0c659ecf77e5"
+  },
+  "nodeGroups": [],
+  "id": "pcSHnlm2IbKno0MA",
+  "tags": []
+}
