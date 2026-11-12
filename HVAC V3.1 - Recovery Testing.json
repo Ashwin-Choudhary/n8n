@@ -75,11 +75,14 @@
           "name": "Google Sheets account"
         }
       },
-      "onError": "continueErrorOutput"
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "parameters": {
-        "jsCode": "\nconst original = $('Prepare Lead Data').first().json;\n\n// Preserve the safety result.\nconst safetyFlag =\n  $('Safety Check').first().json.safety_flag === true;\n\n// PostgreSQL must have granted the claim.\nconst claimGranted =\n  $('Claim Lead Atomically').first().json.claim_outcome === 'claimed';\n\n// Normalization helpers.\nconst normalizeEmail = value =>\n  String(value || '').trim().toLowerCase();\n\nconst normalizePhone = value =>\n  String(value || '').replace(/\\D/g, '');\n\nconst normalizeMessage = value =>\n  String(value || '')\n    .trim()\n    .toLowerCase()\n    .replace(/\\s+/g, ' ');\n\n// Incoming lead.\nconst incomingEmail = normalizeEmail(\n  original.normalizedEmail || original.email\n);\n\nconst incomingPhone = normalizePhone(original.phone);\n\nconst incomingSubmissionId = String(\n  original.submission_id || ''\n).trim();\n\nconst incomingMessage = normalizeMessage(original.message);\n\nconst incomingTime = new Date(original.submitted_at).getTime();\n\nconst twelveHours = 12 * 60 * 60 * 1000;\n\n// Existing leads from this client's Google Sheet.\nconst rows = $input.all();\n\nlet duplicate = false;\nlet possibleDuplicate = false;\nlet duplicateReason = '';\nlet matchedSubmissionId = null;\n\nfor (const item of rows) {\n  const row = item.json;\n\n  const rowSubmissionId = String(\n    row.submission_id || ''\n  ).trim();\n\n  // 1. Identical submission ID.\n  if (\n    incomingSubmissionId &&\n    rowSubmissionId &&\n    incomingSubmissionId === rowSubmissionId\n  ) {\n    // Skip an old AI-failure row only when\n    // PostgreSQL has granted recovery.\n    const retryableAiFailure =\n      String(row.reason || '').trim() ===\n        'AI classification failed' &&\n      claimGranted;\n\n    if (retryableAiFailure) {\n      continue;\n    }\n\n    duplicate = true;\n    possibleDuplicate = false;\n    duplicateReason = 'identical_submission_id';\n    matchedSubmissionId = rowSubmissionId;\n    break;\n  }\n\n  // 2. Check the 12-hour window.\n  if (!row.submitted_at) {\n    continue;\n  }\n\n  const rowTime = new Date(row.submitted_at).getTime();\n\n  if (\n    !Number.isFinite(incomingTime) ||\n    !Number.isFinite(rowTime)\n  ) {\n    continue;\n  }\n\n  const timeDifference = incomingTime - rowTime;\n\n  if (\n    timeDifference < 0 ||\n    timeDifference > twelveHours\n  ) {\n    continue;\n  }\n\n  const rowEmail = normalizeEmail(row.email);\n  const rowPhone = normalizePhone(row.phone);\n\n  // 3. Check whether this is the same customer.\n  let sameCustomer = false;\n\n  if (incomingEmail && incomingPhone) {\n    sameCustomer =\n      rowEmail === incomingEmail &&\n      rowPhone === incomingPhone;\n  } else if (incomingEmail) {\n    sameCustomer = rowEmail === incomingEmail;\n  } else if (incomingPhone) {\n    sameCustomer = rowPhone === incomingPhone;\n  }\n\n  if (!sameCustomer) {\n    continue;\n  }\n\n  // 4. Compare requests.\n  const rowMessage = normalizeMessage(row.message);\n\n  if (\n    incomingMessage &&\n    rowMessage &&\n    incomingMessage === rowMessage\n  ) {\n    duplicate = true;\n    possibleDuplicate = false;\n    duplicateReason = 'identical_request_within_12_hours';\n    matchedSubmissionId = rowSubmissionId || null;\n    break;\n  }\n\n  // Same customer, different request.\n  possibleDuplicate = true;\n  duplicateReason = 'same_customer_different_request';\n  matchedSubmissionId = rowSubmissionId || null;\n}\n\nreturn [\n  {\n    json: {\n      ...original,\n      duplicate,\n      possibleDuplicate,\n      duplicateReason,\n      matchedSubmissionId,\n      safety_flag: safetyFlag\n    }\n  }\n];\n"
+        "jsCode": "\nconst original = $('Prepare Lead Data').first().json;\n\n// Preserve the safety result.\nconst safetyFlag =\n  $('Safety Check').first().json.safety_flag === true;\n\n// PostgreSQL must have granted the claim.\nconst claimGranted =\n  $('Claim Lead Atomically').first().json.claim_outcome === 'claimed';\n\n// Normalization helpers.\nconst normalizeEmail = value =>\n  String(value || '').trim().toLowerCase();\n\nconst normalizePhone = value =>\n  String(value || '').replace(/\\D/g, '');\n\nconst normalizeMessage = value =>\n  String(value || '')\n    .trim()\n    .toLowerCase()\n    .replace(/\\s+/g, ' ');\n\n// Incoming lead.\nconst incomingEmail = normalizeEmail(\n  original.normalizedEmail || original.email\n);\n\nconst incomingPhone = normalizePhone(original.phone);\n\nconst incomingSubmissionId = String(\n  original.submission_id || ''\n).trim();\n\nconst incomingMessage = normalizeMessage(original.message);\n\nconst incomingTime = new Date(original.submitted_at).getTime();\n\nconst twelveHours = 12 * 60 * 60 * 1000;\n\n// Existing leads from this client's Google Sheet.\nconst rows = $input.all();\n\nlet duplicate = false;\nlet possibleDuplicate = false;\nlet duplicateReason = '';\nlet matchedSubmissionId = null;\n\nfor (const item of rows) {\n  const row = item.json;\n\n  const rowSubmissionId = String(\n    row.submission_id || ''\n  ).trim();\n\n  // 1. Identical submission ID.\n  if (\n    incomingSubmissionId &&\n    rowSubmissionId &&\n    incomingSubmissionId === rowSubmissionId\n  ) {\n    // Skip an old AI-failure row only when\n    // PostgreSQL has granted recovery.\n    const retryableAiFailure =\n      String(row.reason || '').trim() ===\n        'AI classification failed' &&\n      claimGranted;\n\n    if (retryableAiFailure) {\n      continue;\n    }\n\n    duplicate = true;\n    possibleDuplicate = false;\n    duplicateReason = 'identical_submission_id';\n    matchedSubmissionId = rowSubmissionId;\n    break;\n  }\n\n  // 2. Check the 12-hour window.\n  if (!row.submitted_at) {\n    continue;\n  }\n\n  const rowTime = new Date(row.submitted_at).getTime();\n\n  if (\n    !Number.isFinite(incomingTime) ||\n    !Number.isFinite(rowTime)\n  ) {\n    continue;\n  }\n\n  const timeDifference = incomingTime - rowTime;\n\n  if (\n    timeDifference < 0 ||\n    timeDifference > twelveHours\n  ) {\n    continue;\n  }\n\n  const rowEmail = normalizeEmail(row.email);\n  const rowPhone = normalizePhone(row.phone);\n\n  // 3. Check whether this is the same customer.\n  let sameCustomer = false;\n\n  if (incomingEmail && incomingPhone) {\n    sameCustomer =\n      rowEmail === incomingEmail &&\n      rowPhone === incomingPhone;\n  } else if (incomingEmail) {\n    sameCustomer = rowEmail === incomingEmail;\n  } else if (incomingPhone) {\n    sameCustomer = rowPhone === incomingPhone;\n  }\n\n  if (!sameCustomer) {\n    continue;\n  }\n\n  // 4. Compare requests.\n  const rowMessage = normalizeMessage(row.message);\n\n  if (\n    incomingMessage &&\n    rowMessage &&\n    incomingMessage === rowMessage\n  ) {\n    // A row left by a failed AI attempt is this same lead waiting\n    // for its retry, not a duplicate. Without this, a lead that has\n    // no submission_id could never be retried.\n    if (\n      String(row.reason || '').trim() ===\n        'AI classification failed' &&\n      claimGranted\n    ) {\n      continue;\n    }\n\n    duplicate = true;\n    possibleDuplicate = false;\n    duplicateReason = 'identical_request_within_12_hours';\n    matchedSubmissionId = rowSubmissionId || null;\n    break;\n  }\n\n  // Same customer, different request.\n  possibleDuplicate = true;\n  duplicateReason = 'same_customer_different_request';\n  matchedSubmissionId = rowSubmissionId || null;\n}\n\nreturn [\n  {\n    json: {\n      ...original,\n      duplicate,\n      possibleDuplicate,\n      duplicateReason,\n      matchedSubmissionId,\n      safety_flag: safetyFlag\n    }\n  }\n];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -431,7 +434,7 @@
             "priority": "review_required",
             "service": "={{ $json.service || JSON.parse($json.raw_payload || '{}').service || 'Unknown' }}",
             "submitted_at": "={{ $('Normalise Lead data').item.json.submitted_at }}",
-            "submitted_at_local": "={{ DateTime.fromISO($json.received_at).setZone($('Client Config').first().json.business_timezone).toFormat(\"MMMM d, yyyy 'at' h:mm a\") }}",
+            "submitted_at_local": "={{ DateTime.fromISO($json.received_at || $json.submitted_at).setZone($('Client Config').first().json.business_timezone).toFormat(\"MMMM d, yyyy 'at' h:mm a\") }}",
             "submission_id": "={{ $json.submission_id }}",
             "phone": "={{ $('Normalize Webhook Data').item.json.phone }}",
             "zip": "={{ $('Normalize Webhook Data').item.json.zip }}",
@@ -614,7 +617,7 @@
       ],
       "id": "7d242135-0578-4fdb-9aca-7c3c19109e8a",
       "name": "Log New Lead",
-      "alwaysOutputData": true,
+      "alwaysOutputData": false,
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "WLF3cd89KAdPq0bV",
@@ -1219,7 +1222,7 @@
     },
     {
       "parameters": {
-        "sendTo": "={{ $('Client Config').item.json.internal_email }}",
+        "sendTo": "={{ $('Client Config').first().json.internal_email }}",
         "subject": "=🚨 HVAC Lead Processing Error — {{ $('Normalise Lead data').first().json.submission_id || $execution.id }}",
         "message": "=\n{{ (() => {\n  const lead = $('Normalise Lead data').first().json;\n  const business = $('Client Config').first().json;\n  const errorData = $json;\n\n  const escapeHtml = value =>\n    String(value ?? '')\n      .replace(/&/g, '&amp;')\n      .replace(/</g, '&lt;')\n      .replace(/>/g, '&gt;')\n      .replace(/\"/g, '&quot;')\n      .replace(/'/g, '&#39;');\n\n  const safe = value =>\n    escapeHtml(\n      value === null || value === undefined || value === ''\n        ? 'Not provided'\n        : value\n    );\n\n  const errorMessage =\n    typeof errorData.error === 'string'\n      ? errorData.error\n      : errorData.error?.message ||\n        errorData.error?.description ||\n        'An unspecified processing error occurred';\n\n  const timestamp = errorData.timestamp || $now.toISO();\n\n  const errorTime = DateTime.fromISO(timestamp)\n    .setZone(business.business_timezone || 'UTC')\n    .toFormat(\"MMMM d, yyyy 'at' h:mm a\");\n\n  const submissionId = lead.submission_id || 'Not provided';\n\n  return `\n  <div style=\"background:#f3f4f6;padding:32px 16px;font-family:Arial,Helvetica,sans-serif;color:#111827;\">\n    <div style=\"max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;\">\n\n      <!-- Header -->\n      <div style=\"background:#7f1d1d;padding:28px;color:#ffffff;\">\n        <div style=\"font-size:12px;font-weight:bold;letter-spacing:1.5px;color:#fecaca;\">\n          HVAC AUTOMATION · ERROR ALERT\n        </div>\n\n        <h1 style=\"font-size:25px;line-height:1.3;margin:14px 0 8px;color:#ffffff;\">\n          Lead Processing Error\n        </h1>\n\n        <p style=\"font-size:14px;line-height:1.6;margin:0;color:#fee2e2;\">\n          An error occurred while processing a customer request.\n        </p>\n      </div>\n\n      <div style=\"padding:28px;\">\n\n        <!-- Alert banner -->\n        <div style=\"background:#fef2f2;border-left:4px solid #dc2626;padding:18px;margin-bottom:26px;\">\n          <div style=\"font-size:12px;font-weight:bold;letter-spacing:0.5px;color:#991b1b;\">\n            MANUAL REVIEW REQUIRED\n          </div>\n\n          <p style=\"font-size:14px;line-height:1.7;margin:8px 0 0;color:#7f1d1d;\">\n            The automated processing path encountered an error.\n            Review the execution and confirm whether the customer\n            needs to be contacted manually.\n          </p>\n        </div>\n\n        <!-- Customer details -->\n        <h2 style=\"font-size:17px;margin:0 0 12px;padding-bottom:10px;border-bottom:1px solid #e5e7eb;\">\n          Customer Details\n        </h2>\n\n        <table style=\"width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;\">\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;width:145px;vertical-align:top;\">Name:</td>\n            <td style=\"padding:9px 0;\"><strong>${safe(lead.name)}</strong></td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;vertical-align:top;\">Email:</td>\n            <td style=\"padding:9px 0;\">${safe(lead.email)}</td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;vertical-align:top;\">Phone:</td>\n            <td style=\"padding:9px 0;\"><strong>${safe(lead.phone)}</strong></td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;vertical-align:top;\">Company:</td>\n            <td style=\"padding:9px 0;\">${safe(lead.company)}</td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;vertical-align:top;\">Budget:</td>\n            <td style=\"padding:9px 0;\">${safe(lead.budget)}</td>\n          </tr>\n        </table>\n\n        <!-- Customer request -->\n        <h2 style=\"font-size:17px;margin:28px 0 12px;padding-bottom:10px;border-bottom:1px solid #e5e7eb;\">\n          Customer Request\n        </h2>\n\n        <div style=\"background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:18px;\">\n          <div style=\"font-size:14px;line-height:1.7;color:#374151;white-space:pre-wrap;overflow-wrap:break-word;\">${safe(lead.message)}</div>\n        </div>\n\n        <!-- Error details -->\n        <h2 style=\"font-size:17px;margin:28px 0 12px;padding-bottom:10px;border-bottom:1px solid #e5e7eb;\">\n          Error Details\n        </h2>\n\n        <table style=\"width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;\">\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;width:145px;\">Status:</td>\n            <td style=\"padding:9px 0;color:#b91c1c;font-weight:bold;\">${safe(errorData.status || 'processing_failed')}</td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;\">Submission ID:</td>\n            <td style=\"padding:9px 0;\">${safe(submissionId)}</td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;\">Client ID:</td>\n            <td style=\"padding:9px 0;\">${safe(business.client_id)}</td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;\">Error Time:</td>\n            <td style=\"padding:9px 0;\">${safe(errorTime)}</td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;\">Execution ID:</td>\n            <td style=\"padding:9px 0;\">${safe($execution.id)}</td>\n          </tr>\n        </table>\n\n        <!-- Actual error -->\n        <div style=\"background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:18px;margin-top:20px;\">\n          <div style=\"font-size:12px;font-weight:bold;letter-spacing:0.5px;color:#991b1b;margin-bottom:10px;\">\n            REPORTED ERROR\n          </div>\n\n          <div style=\"font-size:13px;line-height:1.7;color:#7f1d1d;white-space:pre-wrap;overflow-wrap:break-word;\">${safe(errorMessage)}</div>\n        </div>\n\n        <!-- Action panel -->\n        <div style=\"background:#fff7ed;border-left:4px solid #ea580c;border-radius:4px;padding:18px;margin-top:28px;\">\n          <strong style=\"font-size:15px;color:#9a3412;\">\n            Action Required\n          </strong>\n\n          <ol style=\"font-size:14px;line-height:1.8;color:#7c2d12;padding-left:20px;margin:10px 0 0;\">\n            <li>Open the failed execution and identify the affected node.</li>\n            <li>Check whether the lead was saved to Google Sheets or other storage.</li>\n            <li>Contact the customer manually if their request was not completed.</li>\n            <li>Resolve the error before retrying to avoid duplicate emails or records.</li>\n          </ol>\n        </div>\n\n      </div>\n\n      <!-- Footer -->\n      <div style=\"background:#f9fafb;border-top:1px solid #e5e7eb;padding:20px 28px;text-align:center;\">\n        <div style=\"font-size:12px;color:#6b7280;line-height:1.6;\">\n          Automated internal error notification · ${safe(business.business_name)}<br>\n          Reference: ${safe(submissionId)}<br>\n          Execution: ${safe($execution.id)}\n        </div>\n      </div>\n\n    </div>\n  </div>`;\n})() }}\n",
         "options": {
@@ -1279,7 +1282,7 @@
             },
             {
               "id": "42c7ed41-714d-4f17-a88f-faefff460ca8",
-              "name": "=name",
+              "name": "name",
               "value": "={{ $('Webhook').first().json.body.name ?? null }}",
               "type": "string"
             },
@@ -1332,21 +1335,17 @@
               "type": "string"
             },
             {
-              "id": "069a0211-110c-40b4-9a51-2ad586b86279",
-              "name": "phone",
-              "value": "={{ $('Webhook').item.json.body.phone ?? null}}",
-              "type": "string"
-            },
-            {
               "id": "2b11c105-bb30-4a80-a74f-34c33324e296",
               "name": "client_id",
-              "value": "={{ $('Client Config').item.json['client_id '] }}",
+              "value": "={{ $('Client Config').item.json.client_id }}",
               "type": "string"
             }
           ]
         },
         "includeOtherFields": true,
-        "options": {}
+        "options": {},
+        "include": "except",
+        "excludeFields": "error"
       },
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
@@ -1484,7 +1483,10 @@
           "__aiGatewayManaged": true
         }
       },
-      "onError": "continueErrorOutput"
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000
     },
     {
       "parameters": {
@@ -1516,7 +1518,7 @@
             },
             {
               "id": "1d7ddb0d-4472-4619-9ce2-9663fcfa05d4",
-              "name": "client_id ",
+              "name": "client_id",
               "value": "=demo-hvac-001",
               "type": "string"
             }
@@ -1739,7 +1741,7 @@
       "typeVersion": 2.2,
       "position": [
         -144,
-        320
+        32
       ],
       "id": "f10a3462-80f2-4396-990a-b8efc0f3c73e",
       "name": "Send Safety Alert",
@@ -1749,7 +1751,8 @@
           "id": "6mXS17oyq2ZjjIMu",
           "name": "Gmail account"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -1927,7 +1930,7 @@
       "typeVersion": 4.7,
       "position": [
         -144,
-        32
+        352
       ],
       "id": "b7317c95-f395-44f7-9979-6df6b2d7d23e",
       "name": "Log Safety Lead",
@@ -1936,7 +1939,8 @@
           "id": "WLF3cd89KAdPq0bV",
           "name": "Google Sheets account"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -1997,7 +2001,7 @@
             {
               "id": "991423a0-f328-4d26-b7d6-ad0ddabc5ec5",
               "name": "client_id",
-              "value": "={{ $('Client Config').item.json['client_id '] }}",
+              "value": "={{ $('Client Config').item.json.client_id }}",
               "type": "string"
             }
           ]
@@ -2072,8 +2076,8 @@
             "submitted_at": "={{ $('Prepare Human Review').first().json.submitted_at }}",
             "submitted_at_local": "= {{ DateTime.fromISO($('Prepare Human Review').first().json.submitted_at).setZone($('Client Config').first().json.business_timezone).toFormat(\"MMMM d, yyyy 'at' h:mm a\") }}",
             "action_status": "Pending review",
-            "client_id": "={{ $('Client Config').item.json['client_id '] }}",
-            "review_category": "safety"
+            "client_id": "={{ $('Client Config').item.json.client_id }}",
+            "review_category": "human_review"
           },
           "matchingColumns": [],
           "schema": [
@@ -2236,7 +2240,8 @@
           "id": "WLF3cd89KAdPq0bV",
           "name": "Google Sheets account"
         }
-      }
+      },
+      "onError": "continueErrorOutput"
     },
     {
       "parameters": {
@@ -2251,7 +2256,7 @@
           "mappingMode": "defineBelow",
           "value": {
             "submission_id": "={{ $json.body.submission_id || $execution.id }}",
-            "client_id": "={{ $json['client_id '] }}",
+            "client_id": "={{ $json.client_id }}",
             "received_at": "={{ $now.toISO() }}",
             "raw_payload": "={{ JSON.stringify($json.body) }}",
             "processing_status": "received"
@@ -2380,7 +2385,7 @@
     {
       "parameters": {
         "sendTo": "={{ $('Client Config').item.json.internal_email }}",
-        "subject": "🚨 CRITICAL: Raw Lead Storage Failed — {{ $('Webhook').first().json.body.submission_id || $execution.id }}",
+        "subject": "=🚨 CRITICAL: Raw Lead Storage Failed — {{ $('Webhook').first().json.body.submission_id || $execution.id }}",
         "message": "=\n{{ (() => {\n  const lead = $('Webhook').first().json.body || {};\n  const business = $('Client Config').first().json;\n  const errorData = $json;\n\n  const escapeHtml = value =>\n    String(value ?? '')\n      .replace(/&/g, '&amp;')\n      .replace(/</g, '&lt;')\n      .replace(/>/g, '&gt;')\n      .replace(/\"/g, '&quot;')\n      .replace(/'/g, '&#39;');\n\n  const safe = value =>\n    escapeHtml(\n      value === null || value === undefined || value === ''\n        ? 'Not provided'\n        : value\n    );\n\n  const submissionId = lead.submission_id || $execution.id;\n  const timezone = business.business_timezone || 'UTC';\n\n  const receivedAt = DateTime.fromISO(\n    errorData.timestamp || $now.toISO()\n  ).setZone(timezone).toFormat(\"MMMM d, yyyy 'at' h:mm a\");\n\n  const errorMessage =\n    typeof errorData.error === 'string'\n      ? errorData.error\n      : errorData.error?.message ||\n        errorData.error?.description ||\n        'Raw lead storage failed';\n\n  const rawPayload = JSON.stringify(lead, null, 2);\n\n  return `\n  <div style=\"background:#f3f4f6;padding:32px 16px;font-family:Arial,Helvetica,sans-serif;color:#111827;\">\n    <div style=\"max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;\">\n\n      <!-- Critical header -->\n      <div style=\"background:#991b1b;padding:28px;color:#ffffff;\">\n        <div style=\"font-size:12px;font-weight:bold;letter-spacing:1.5px;color:#fecaca;\">\n          CRITICAL SYSTEM NOTIFICATION\n        </div>\n\n        <h1 style=\"font-size:25px;line-height:1.3;margin:14px 0 8px;color:#ffffff;\">\n          Raw Lead Storage Failure\n        </h1>\n\n        <p style=\"font-size:14px;line-height:1.6;margin:0;color:#fee2e2;\">\n          A new HVAC lead was received, but its raw data could not be saved.\n        </p>\n      </div>\n\n      <div style=\"padding:28px;\">\n\n        <!-- Critical warning -->\n        <div style=\"background:#fef2f2;border-left:4px solid #dc2626;padding:18px;margin-bottom:26px;\">\n          <div style=\"font-size:12px;font-weight:bold;letter-spacing:0.5px;color:#991b1b;\">\n            IMMEDIATE ATTENTION REQUIRED\n          </div>\n\n          <p style=\"font-size:14px;line-height:1.7;margin:8px 0 0;color:#7f1d1d;\">\n            This lead may not exist in the raw lead database.\n            Preserve the customer information in this notification\n            and investigate the storage failure.\n          </p>\n        </div>\n\n        <!-- Customer details -->\n        <h2 style=\"font-size:17px;margin:0 0 12px;padding-bottom:10px;border-bottom:1px solid #e5e7eb;\">\n          Customer Details\n        </h2>\n\n        <table style=\"width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;\">\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;width:145px;vertical-align:top;\">Name:</td>\n            <td style=\"padding:9px 0;\"><strong>${safe(lead.name)}</strong></td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;vertical-align:top;\">Email:</td>\n            <td style=\"padding:9px 0;\">${safe(lead.email)}</td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;vertical-align:top;\">Phone:</td>\n            <td style=\"padding:9px 0;\"><strong>${safe(lead.phone)}</strong></td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;vertical-align:top;\">Company:</td>\n            <td style=\"padding:9px 0;\">${safe(lead.company)}</td>\n          </tr>\n        </table>\n\n        <!-- Request details -->\n        <h2 style=\"font-size:17px;margin:28px 0 12px;padding-bottom:10px;border-bottom:1px solid #e5e7eb;\">\n          Customer Request\n        </h2>\n\n        <div style=\"background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:18px;\">\n          <div style=\"font-size:14px;line-height:1.7;color:#374151;white-space:pre-wrap;overflow-wrap:break-word;\">${safe(lead.message || 'No message provided')}</div>\n        </div>\n\n        <table style=\"width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;margin-top:16px;\">\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;width:145px;\">Budget:</td>\n            <td style=\"padding:9px 0;\">${safe(lead.budget)}</td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;\">ZIP Code:</td>\n            <td style=\"padding:9px 0;\">${safe(lead.zip)}</td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;\">Preferred Time:</td>\n            <td style=\"padding:9px 0;\">${safe(lead.preferred_time)}</td>\n          </tr>\n        </table>\n\n        <!-- Technical details -->\n        <h2 style=\"font-size:17px;margin:28px 0 12px;padding-bottom:10px;border-bottom:1px solid #e5e7eb;\">\n          Technical Error Details\n        </h2>\n\n        <table style=\"width:100%;border-collapse:collapse;font-size:14px;line-height:1.6;\">\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;width:145px;\">Status:</td>\n            <td style=\"padding:9px 0;color:#b91c1c;font-weight:bold;\">${safe(errorData.status || 'raw_storage_failed')}</td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;\">Submission ID:</td>\n            <td style=\"padding:9px 0;\">${safe(submissionId)}</td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;\">Client ID:</td>\n            <td style=\"padding:9px 0;\">${safe(business.client_id)}</td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;\">Time:</td>\n            <td style=\"padding:9px 0;\">${safe(receivedAt)}</td>\n          </tr>\n\n          <tr>\n            <td style=\"padding:9px 12px 9px 0;color:#6b7280;\">Execution ID:</td>\n            <td style=\"padding:9px 0;\">${safe($execution.id)}</td>\n          </tr>\n        </table>\n\n        <!-- Error message -->\n        <div style=\"background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:18px;margin-top:20px;\">\n          <div style=\"font-size:12px;font-weight:bold;letter-spacing:0.5px;color:#991b1b;margin-bottom:10px;\">\n            STORAGE ERROR\n          </div>\n\n          <div style=\"font-size:13px;line-height:1.7;color:#7f1d1d;white-space:pre-wrap;overflow-wrap:break-word;\">${safe(errorMessage)}</div>\n        </div>\n\n        <!-- Recovery payload -->\n        <div style=\"background:#f9fafb;border:1px solid #d1d5db;border-radius:8px;padding:18px;margin-top:20px;\">\n          <div style=\"font-size:12px;font-weight:bold;letter-spacing:0.5px;color:#374151;margin-bottom:10px;\">\n            ORIGINAL WEBHOOK PAYLOAD\n          </div>\n\n          <p style=\"font-size:12px;line-height:1.6;color:#6b7280;margin:0 0 12px;\">\n            Recovery copy of the submitted data. Handle as confidential customer information.\n          </p>\n\n          <pre style=\"font-family:Consolas,Monaco,monospace;font-size:12px;line-height:1.6;color:#374151;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;\">${escapeHtml(rawPayload)}</pre>\n        </div>\n\n        <!-- Action required -->\n        <div style=\"background:#fff7ed;border-left:4px solid #ea580c;border-radius:4px;padding:18px;margin-top:28px;\">\n          <strong style=\"font-size:15px;color:#9a3412;\">\n            Action Required\n          </strong>\n\n          <ol style=\"font-size:14px;line-height:1.8;color:#7c2d12;padding-left:20px;margin:10px 0 0;\">\n            <li>Preserve the customer's details from this email.</li>\n            <li>Contact the customer manually if needed, especially for urgent requests.</li>\n            <li>Investigate the raw lead storage failure.</li>\n            <li>Check existing records before replaying the submission to avoid duplicates.</li>\n          </ol>\n        </div>\n\n      </div>\n\n      <!-- Footer -->\n      <div style=\"background:#f9fafb;border-top:1px solid #e5e7eb;padding:20px 28px;text-align:center;\">\n        <div style=\"font-size:12px;color:#6b7280;line-height:1.6;\">\n          Automated critical alert · ${safe(business.business_name)}<br>\n          Reference: ${safe(submissionId)}<br>\n          Status: Raw storage failed\n        </div>\n      </div>\n\n    </div>\n  </div>`;\n})() }}\n",
         "options": {
           "appendAttribution": false
@@ -2400,7 +2405,8 @@
           "id": "6mXS17oyq2ZjjIMu",
           "name": "Gmail account"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -2710,7 +2716,7 @@
         272
       ],
       "id": "19b5e786-4f66-4bc4-9ea1-b2d7318bff12",
-      "name": "Respond to Duplicate Review"
+      "name": "Respond Pending Review"
     },
     {
       "parameters": {
@@ -3109,13 +3115,13 @@
           "options": {
             "caseSensitive": true,
             "leftValue": "",
-            "typeValidation": "loose",
+            "typeValidation": "strict",
             "version": 3
           },
           "conditions": [
             {
               "id": "d118e223-263b-488c-9e3f-f7fec792464e",
-              "leftValue": "=  {{ $json.recovery_marked }}",
+              "leftValue": "={{ $json.recovery_marked === true }}",
               "rightValue": "",
               "operator": {
                 "type": "boolean",
@@ -3126,7 +3132,6 @@
           ],
           "combinator": "and"
         },
-        "looseTypeValidation": true,
         "options": {}
       },
       "type": "n8n-nodes-base.if",
@@ -3341,7 +3346,7 @@
         "operation": "executeQuery",
         "query": "UPDATE public.hvac_lead_claims\nSET\n    status = 'failed',\n    claim_outcome = 'duplicate_rejected',\n    updated_at = NOW()\nWHERE client_id = $1\n  AND submission_id = $2\n  AND status = 'claimed'\n  AND customer_email_status = 'pending'\n  AND customer_email_message_id IS NULL\nRETURNING\n    id,\n    client_id,\n    submission_id,\n    status,\n    claim_outcome,\n    customer_email_status,\n    customer_email_message_id;",
         "options": {
-          "queryReplacement": "={{ [\n  $('Client Config').first().json.client_id,\n  'website:' + String($('Prepare Lead Data').first().json.submission_id || '').trim()\n] }}"
+          "queryReplacement": "={{ [\n  $('Select Dedup Key').first().json.client_id,\n  $('Select Dedup Key').first().json.dedup_key\n] }}"
         }
       },
       "type": "n8n-nodes-base.postgres",
@@ -3358,6 +3363,130 @@
           "name": "Postgres account"
         }
       }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Client Config').first().json.internal_email }}",
+        "subject": "=⚠️ Duplicate check skipped — {{ $('Select Dedup Key').first().json.submission_id || $('Select Dedup Key').first().json.dedup_key }}",
+        "message": "={{ (() => {\n  const lead = $('Select Dedup Key').first().json;\n\n  const escapeHtml = value =>\n    String(value ?? 'Not provided')\n      .replace(/&/g, '&amp;')\n      .replace(/</g, '&lt;')\n      .replace(/>/g, '&gt;')\n      .replace(/\"/g, '&quot;')\n      .replace(/'/g, '&#39;');\n\n  return `\n  <div style=\"font-family:Arial,sans-serif;max-width:600px;margin:auto;border:1px solid #fed7aa;border-radius:8px;overflow:hidden;\">\n    <div style=\"background:#b45309;color:white;padding:24px;\">\n      <div style=\"font-size:11px;font-weight:bold;\">HVAC LEAD MANAGEMENT</div>\n      <h2 style=\"margin:12px 0 6px;\">Duplicate check skipped</h2>\n    </div>\n    <div style=\"padding:24px;font-size:14px;line-height:1.7;color:#374151;\">\n      <p>Google Sheets could not be read, so this lead was processed\n      <strong>without</strong> the 12-hour duplicate check. Exact re-deliveries\n      are still blocked by the database claim.</p>\n      <p><strong>Name:</strong> ${escapeHtml(lead.name)}<br>\n      <strong>Email:</strong> ${escapeHtml(lead.email)}<br>\n      <strong>Phone:</strong> ${escapeHtml(lead.phone)}<br>\n      <strong>Reference:</strong> ${escapeHtml(lead.submission_id || lead.dedup_key)}<br>\n      <strong>Execution:</strong> ${escapeHtml($execution.id)}</p>\n      <p>Check the sheet for a repeat request from this customer.</p>\n    </div>\n  </div>`;\n})() }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -1648,
+        912
+      ],
+      "name": "Send Duplicate Check Warning",
+      "webhookId": "30b56b90-d959-5654-9510-6e02f22daa45",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "6mXS17oyq2ZjjIMu",
+          "name": "Gmail account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "id": "5c96a608-39b3-53e5-90cf-b283c21a84b8"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "5632892a-4641-52d5-a79e-f3244a368ab1",
+              "leftValue": "={{ $('Normalise Lead data').first().json.safety_flag === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -960,
+        912
+      ],
+      "name": "Safety Flag Without AI?",
+      "id": "8ba00f8f-28f7-5c25-8050-83e35e5b4809"
+    },
+    {
+      "parameters": {
+        "jsCode": "// AI classification failed, but the keyword Safety Check had already\n// flagged this lead. Build the fields the safety branch needs so a\n// possible gas / CO / fire report is never reduced to an \"AI failed\"\n// notice.\nconst lead = $('Normalise Lead data').first().json;\nconst safety = $('Safety Check').first().json;\n\nreturn [{\n  json: {\n    ...lead,\n    lead_type: 'hot',\n    urgency: 'urgent',\n    priority: 'high',\n    service: lead.service || 'Emergency HVAC safety review',\n    reason:\n      (safety.review_reason || 'Potential HVAC safety hazard.') +\n      ' AI classification was unavailable.',\n    needs_human_review: true,\n    review_reason: safety.review_reason || '',\n    ai_unavailable: true\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -736,
+        912
+      ],
+      "name": "Build Safety Lead Without AI",
+      "id": "1edca8f7-cbe6-52af-beeb-a9b88339a081"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  success: false,\n  status: \"rejected\",\n  message: \"Please provide all required fields.\",\n  missing_fields: $json.missingFields\n}) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -3456,
+        720
+      ],
+      "name": "Respond Invalid Request",
+      "id": "f5be667f-0a5c-56c3-81b1-b2d142a2a480"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": true,\n  \"status\": \"duplicate\",\n  \"message\": \"This request was already received.\"\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        -1024,
+        1088
+      ],
+      "name": "Respond Duplicate",
+      "id": "65ffeab7-b62d-54eb-b2ff-023bdedc1512"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\n  \"success\": false,\n  \"status\": \"processing_error\",\n  \"message\": \"The request was received but could not be fully processed. It has been flagged for manual review.\"\n}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2416,
+        912
+      ],
+      "name": "Respond Processing Error",
+      "id": "bf0e4aa6-f87a-553d-9f6f-aefd2f6f916f"
     }
   ],
   "pinData": {},
@@ -3389,6 +3518,13 @@
         [
           {
             "node": "Normalise Lead data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Duplicate Check Warning",
             "type": "main",
             "index": 0
           }
@@ -3435,7 +3571,7 @@
         ],
         [
           {
-            "node": "AI Error Handler",
+            "node": "Safety Flag Without AI?",
             "type": "main",
             "index": 0
           }
@@ -3694,7 +3830,7 @@
         ],
         [
           {
-            "node": "AI Error Handler",
+            "node": "Safety Flag Without AI?",
             "type": "main",
             "index": 0
           }
@@ -3767,6 +3903,11 @@
       "main": [
         [
           {
+            "node": "Send Safety Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
             "node": "Send Safety Email",
             "type": "main",
             "index": 0
@@ -3783,7 +3924,14 @@
       "main": [
         [
           {
-            "node": "Send Safety Alert",
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Error Notification",
             "type": "main",
             "index": 0
           }
@@ -3833,6 +3981,11 @@
             "node": "Send Error Notification",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "Log Human Review Lead",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -3849,6 +4002,11 @@
         [
           {
             "node": "Prepare Raw Storage Error",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Normalize Webhook Data",
             "type": "main",
             "index": 0
           }
@@ -3910,7 +4068,7 @@
       "main": [
         [
           {
-            "node": "Respond to Duplicate Review",
+            "node": "Respond Pending Review",
             "type": "main",
             "index": 0
           }
@@ -4081,6 +4239,13 @@
             "type": "main",
             "index": 0
           }
+        ],
+        [
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
         ]
       ]
     },
@@ -4198,6 +4363,143 @@
         [
           {
             "node": "Record Duplicate Rejection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Safety Flag Without AI?": {
+      "main": [
+        [
+          {
+            "node": "Build Safety Lead Without AI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Safety Lead Without AI": {
+      "main": [
+        [
+          {
+            "node": "Prepare Safety Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Safety Alert": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Safety Lead": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Human Review Lead": {
+      "main": [
+        [
+          {
+            "node": "Respond Pending Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Missing Fields": {
+      "main": [
+        [
+          {
+            "node": "Respond Invalid Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Duplicate Rejection": {
+      "main": [
+        [
+          {
+            "node": "Respond Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Atomic Duplicate Handler": {
+      "main": [
+        [
+          {
+            "node": "Respond Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Error Notification": {
+      "main": [
+        [
+          {
+            "node": "Respond Processing Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send AI Recovery Review Alert": {
+      "main": [
+        [
+          {
+            "node": "Respond Processing Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Tracking Failure Alert": {
+      "main": [
+        [
+          {
+            "node": "Respond Processing Error",
             "type": "main",
             "index": 0
           }
